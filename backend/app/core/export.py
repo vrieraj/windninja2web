@@ -86,12 +86,15 @@ def export_kmz(results: list[SimulationResult], output_path: str,
                 coord.text = f"{x},{y},0"
 
     kml = ET.tostring(doc, encoding="utf-8", xml_declaration=True)
-    tmp_kml = output_path + ".kml"
-    with open(tmp_kml, "wb") as f:
-        f.write(kml)
-    with ZipFile(output_path, "w", ZIP_DEFLATED) as z:
-        z.write(tmp_kml, "doc.kml")
-    os.remove(tmp_kml)
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".kml", delete=False) as tmp:
+        tmp_kml = tmp.name
+        tmp.write(kml)
+    try:
+        with ZipFile(output_path, "w", ZIP_DEFLATED) as z:
+            z.write(tmp_kml, "doc.kml")
+    finally:
+        os.unlink(tmp_kml)
 
 
 def export_ascii_zip(results: list[SimulationResult], output_path: str,

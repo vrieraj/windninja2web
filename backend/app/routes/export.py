@@ -1,9 +1,9 @@
+import os
 import tempfile
-from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
+from fastapi import BackgroundTasks
 from backend.app.core.task_manager import task_manager, TaskStatus
-from backend.app.models.schemas import ExportRequest
 
 router = APIRouter(prefix="/export", tags=["export"])
 
@@ -25,8 +25,14 @@ EXT_MAP = {
     "vtk": ".vtk",
 }
 
+def _cleanup(path: str):
+    try:
+        os.unlink(path)
+    except Exception:
+        pass
+
 @router.get("/{task_id}/{fmt}")
-async def export_simulation(task_id: str, fmt: str):
+async def export_simulation(task_id: str, fmt: str, bg: BackgroundTasks):
     if fmt not in MIME_MAP:
         raise HTTPException(400, f"Unsupported format: {fmt}. Use: {', '.join(MIME_MAP.keys())}")
     t = task_manager.get_status(task_id)
@@ -41,10 +47,12 @@ async def export_simulation(task_id: str, fmt: str):
 
     try:
         task_manager.export(task_id, fmt, output_path)
+        bg.add_task(_cleanup, output_path)
         return FileResponse(
             output_path,
             media_type=MIME_MAP[fmt],
             filename=f"windninja_{task_id[:8]}{ext}",
         )
     except Exception as e:
+        _cleanup(output_path)
         raise HTTPException(500, str(e))

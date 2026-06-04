@@ -4,7 +4,6 @@ from pathlib import Path
 import numpy as np
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
-from osgeo import osr
 from backend.app.models.schemas import SimulationRequest, TimeseriesRequest
 from backend.app.core.task_manager import task_manager, TaskStatus
 from backend.app.core.ninja_bridge import SimulationConfig
@@ -19,6 +18,7 @@ async def create_simulation(req: SimulationRequest):
         raise HTTPException(400, f"Cannot resolve DEM: {req.dem_source} ({req.dem_type})")
 
     task_id = task_manager.create_task()
+    dt = req.datetime
     config = SimulationConfig(
         dem_path=str(dem_path),
         input_speed=req.input_speed,
@@ -30,6 +30,12 @@ async def create_simulation(req: SimulationRequest):
         number_cpus=req.number_cpus,
         output_speed_units=req.output_speed_units,
         diurnal_winds=req.diurnal_winds,
+        air_temp=req.air_temp,
+        cloud_cover=req.cloud_cover,
+        year=int(dt[:4]) if dt else None,
+        month=int(dt[5:7]) if dt else None,
+        day=int(dt[8:10]) if dt else None,
+        hour=int(dt[11:13]) if dt else None,
     )
     task_manager.run_simulation(task_id, config)
     return {"task_id": task_id}
@@ -96,6 +102,7 @@ async def simulation_grid(task_id: str, index: int = Query(0, ge=0)):
 
     ct = None
     if res.projection:
+        from osgeo import osr
         src_sr = osr.SpatialReference()
         src_sr.ImportFromWkt(res.projection)
         tgt_sr = osr.SpatialReference()
@@ -135,6 +142,7 @@ async def create_timeseries(req: TimeseriesRequest):
     task_id = task_manager.create_task()
     task_manager.run_timeseries(
         task_id, str(dem_path), req.speeds, req.directions,
-        req.vegetation, req.number_cpus,
+        vegetation=req.vegetation, number_cpus=req.number_cpus,
+        mesh_resolution=req.mesh_resolution,
     )
     return {"task_id": task_id}

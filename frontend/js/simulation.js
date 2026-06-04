@@ -33,7 +33,7 @@ async function runSimulation() {
     if (!appState.bbox) return alert("Selecciona un área en el mapa primero");
     const demType = document.getElementById("dem-source").value;
     const payload = {
-        dem_source: "auto",
+        dem_source: demType === "upload" && appState.dem ? appState.dem : "auto",
         dem_type: demType === "upload" ? "srtm" : demType,
         north: appState.bbox.north,
         south: appState.bbox.south,
@@ -84,7 +84,7 @@ async function runTimeSeries() {
     }
 
     const payload = {
-        dem_source: "auto",
+        dem_source: demType === "upload" && appState.dem ? appState.dem : "auto",
         dem_type: demType === "upload" ? "srtm" : demType,
         north: appState.bbox.north,
         south: appState.bbox.south,

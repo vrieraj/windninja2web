@@ -1,5 +1,6 @@
 import uuid
 import logging
+import threading
 from enum import Enum
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
@@ -17,30 +18,33 @@ class TaskStatus(str, Enum):
 class TaskManager:
     def __init__(self, max_workers: int = 2):
         self._tasks: dict[str, dict] = {}
+        self._lock = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
 
     def create_task(self) -> str:
         task_id = str(uuid.uuid4())
-        self._tasks[task_id] = {
-            "status": TaskStatus.PENDING,
-            "progress": 0.0,
-            "result": None,
-            "error": None,
-        }
+        with self._lock:
+            self._tasks[task_id] = {
+                "status": TaskStatus.PENDING,
+                "progress": 0.0,
+                "result": None,
+                "error": None,
+            }
         return task_id
 
     def update(self, task_id: str, status: TaskStatus, progress: float = None, result: SimulationResult = None, error: str = None):
-        t = self._tasks.get(task_id)
-        if t is None:
-            return
-        if status is not None:
-            t["status"] = status
-        if progress is not None:
-            t["progress"] = progress
-        if result is not None:
-            t["result"] = result
-        if error is not None:
-            t["error"] = error
+        with self._lock:
+            t = self._tasks.get(task_id)
+            if t is None:
+                return
+            if status is not None:
+                t["status"] = status
+            if progress is not None:
+                t["progress"] = progress
+            if result is not None:
+                t["result"] = result
+            if error is not None:
+                t["error"] = error
 
     def run_simulation(self, task_id: str, config: SimulationConfig):
         def _run():
@@ -58,12 +62,13 @@ class TaskManager:
 
     def run_timeseries(self, task_id: str, dem_path: str, speeds: list[float],
                        directions: list[float], vegetation: str = "grass",
-                       number_cpus: int = 2):
+                       number_cpus: int = 2, mesh_resolution: float = 100.0):
         def _run():
             try:
                 self.update(task_id, TaskStatus.RUNNING, 0.1)
                 session = TimeSeriesSession()
-                session.configure(dem_path, speeds, directions, vegetation, number_cpus)
+                session.configure(dem_path, speeds, directions, vegetation,
+                                  number_cpus, mesh_resolution)
                 self.update(task_id, TaskStatus.RUNNING, 0.5)
                 results = session.run_all()
                 self.update(task_id, TaskStatus.COMPLETED, 1.0, result=results)
@@ -73,13 +78,15 @@ class TaskManager:
         self._executor.submit(_run)
 
     def get_status(self, task_id: str) -> Optional[dict]:
-        return self._tasks.get(task_id)
+        with self._lock:
+            return self._tasks.get(task_id)
 
     def get_result(self, task_id: str) -> Optional[SimulationResult]:
-        t = self._tasks.get(task_id)
-        if t is None or t["status"] != TaskStatus.COMPLETED:
-            return None
-        return t["result"]
+        with self._lock:
+            t = self._tasks.get(task_id)
+            if t is None or t["status"] != TaskStatus.COMPLETED:
+                return None
+            return t["result"]
 
     def export(self, task_id: str, fmt: str, output_path: str):
         t = self._tasks.get(task_id)

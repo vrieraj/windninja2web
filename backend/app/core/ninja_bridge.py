@@ -152,11 +152,17 @@ class TimeSeriesSession:
                   directions: list[float], vegetation: str = "grass",
                   number_cpus: int = 2, mesh_resolution: float = 100.0,
                   input_wind_height: float = 10.0,
-                  output_wind_height: float = 10.0):
+                  output_wind_height: float = 10.0,
+                  diurnal_winds: bool = False,
+                  air_temp: float = None, cloud_cover: float = None,
+                  year: int = None, month: int = None,
+                  day: int = None, hour: int = None,
+                  time_zone: str = "UTC"):
         n_runs = len(speeds)
         if len(directions) != n_runs:
             raise ValueError("speeds and directions must have same length")
         self._n_runs = n_runs
+        self._n_cpus = number_cpus
 
         self._army.makeDomainAverageArmy(n_runs)
         for i in range(n_runs):
@@ -170,13 +176,19 @@ class TimeSeriesSession:
             self._army.setOutputWindHeight(i, output_wind_height, "meters")
             self._army.setPosition(i)
             self._army.setInitializationMethod(i, "domainAverage")
-        self._army.setNumberCPUs(0, number_cpus)
-        self._army.setPosition(0)
+            if diurnal_winds:
+                self._army.setDiurnalWinds(i, True)
+                if air_temp is not None:
+                    self._army.setUniAirTemp(i, air_temp, "C")
+                if cloud_cover is not None:
+                    self._army.setUniCloudCover(i, cloud_cover, "percent")
+                if year is not None:
+                    self._army.setDateTime(i, year, month, day, hour, 0, 0, time_zone)
 
     def run_all(self) -> list[SimulationResult]:
         if self._n_runs == 0:
             raise RuntimeError("Call configure() before run_all()")
-        ok = self._army.startRuns(2)
+        ok = self._army.startRuns(getattr(self, '_n_cpus', 2))
         if not ok:
             raise RuntimeError("startRuns() returned False")
         results = []
