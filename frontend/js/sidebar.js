@@ -38,6 +38,11 @@ function buildSidebar() {
     fillPanels();
 }
 
+function onTimeSlider(input) {
+    const idx = parseInt(input.value);
+    updateTimeSlider(idx, appState.timeCount);
+}
+
 function fillPanels() {
     const dem = document.getElementById("dem-panel");
     dem.innerHTML = `
@@ -49,6 +54,8 @@ function fillPanels() {
     </select>
     <button class="btn btn-primary" onclick="toggleDraw()">Seleccionar área en el mapa</button>
     <button class="btn" style="background:#585b70;color:#cdd6f4;margin-top:4px;" onclick="fetchDEM()">Descargar DEM</button>
+    <input type="file" id="file-upload-input" accept=".tif,.tiff,.asc,.bil"
+           style="display:none" onchange="uploadDEM(this.files[0])">
     <p id="bbox-info" style="font-size:0.8rem;margin-top:4px;">Ningún área seleccionada</p>
   `;
 
@@ -80,6 +87,8 @@ function fillPanels() {
     mesh.innerHTML = `
     <label>Resolución de malla (m)</label>
     <input type="number" id="mesh-res" value="100" min="10" step="10">
+    <label>Cantidad de simulaciones (time series)</label>
+    <input type="number" id="ts-count" value="8" min="2" max="30" step="1">
   `;
 
     const diurnal = document.getElementById("diurnal-panel");
@@ -96,10 +105,16 @@ function fillPanels() {
     const exportP = document.getElementById("export-panel");
     exportP.innerHTML = `
     <button class="btn btn-success" onclick="runSimulation()">▶ Simular</button>
+    <button class="btn" style="background:#f9e2af;color:#1e1e2e;margin-top:4px;" onclick="runTimeSeries()">▶ Simular Time Series</button>
     <div id="progress-bar" style="display:none;margin-top:8px;">
       <div style="height:6px;background:#45475a;border-radius:3px;">
         <div id="progress-fill" style="height:100%;width:0%;background:#89b4fa;border-radius:3px;transition:width 0.3s;"></div>
       </div>
+    </div>
+    <div id="time-slider-container" style="display:none;margin-top:8px;">
+      <label id="time-label">Paso 1 / 1</label>
+      <input type="range" id="time-slider" min="0" max="0" value="0"
+             oninput="onTimeSlider(this)" style="width:100%;">
     </div>
     <hr style="margin:12px 0;border-color:#313244;">
     <label>Exportar</label>
