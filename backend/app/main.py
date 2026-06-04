@@ -1,13 +1,16 @@
 import os
 from pathlib import Path
-from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-# Load .env from project root
-ENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
-load_dotenv(ENV_PATH)
+# Load .env (optional, graceful fallback)
+try:
+    from dotenv import load_dotenv
+    ENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
+    load_dotenv(ENV_PATH)
+except ImportError:
+    pass
 
 app = FastAPI(title="WindNinja Web")
 

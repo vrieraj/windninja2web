@@ -1,31 +1,33 @@
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Optional, Literal
 
 class SimulationRequest(BaseModel):
-    dem_source: str
-    north: float
-    south: float
-    east: float
-    west: float
-    input_speed: float
-    input_direction: float
-    input_wind_height: Optional[float] = 10.0
-    vegetation: Optional[str] = "grass"
-    diurnal_winds: Optional[bool] = False
-    mesh_resolution: Optional[float] = 100.0
-    number_cpus: Optional[int] = 2
+    dem_source: str = Field(..., description="DEM path or 'auto' to download")
+    north: float = Field(..., ge=-90, le=90)
+    south: float = Field(..., ge=-90, le=90)
+    east: float = Field(..., ge=-180, le=180)
+    west: float = Field(..., ge=-180, le=180)
+    input_speed: float = Field(..., gt=0)
+    input_direction: float = Field(..., ge=0, le=360)
+    input_wind_height: float = 10.0
+    output_wind_height: float = 10.0
+    vegetation: str = "grass"
+    diurnal_winds: bool = False
+    mesh_resolution: float = 100.0
+    output_speed_units: Literal["mps", "mph", "kph", "kts"] = "mps"
+    number_cpus: int = 2
 
 class TimeseriesRequest(BaseModel):
     dem_source: str
-    north: float
-    south: float
-    east: float
-    west: float
-    speeds: list[float]
-    directions: list[float]
-    timestamps: Optional[list[str]] = None
-    vegetation: Optional[str] = "grass"
+    north: float = Field(..., ge=-90, le=90)
+    south: float = Field(..., ge=-90, le=90)
+    east: float = Field(..., ge=-180, le=180)
+    west: float = Field(..., ge=-180, le=180)
+    speeds: list[float] = Field(..., min_length=1)
+    directions: list[float] = Field(..., min_length=1)
+    vegetation: str = "grass"
+    mesh_resolution: float = 100.0
+    number_cpus: int = 2
 
 class ExportRequest(BaseModel):
-    task_id: str
-    fmt: str  # geotiff, gpkg, kmz, ascii-zip, pdf, vtk
+    fmt: Literal["geotiff", "gpkg", "kmz", "ascii-zip", "pdf", "vtk"]
