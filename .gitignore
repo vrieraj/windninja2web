@@ -49,6 +49,10 @@ doxy.tag
 # OpenFOAM
 *.dep
 
+# Python
+__pycache__/
+*.pyc
+
 # VS 2022 additions
 /.vs/
 /src/out/
