@@ -11,9 +11,10 @@ async function fetchDEM() {
             south: appState.bbox.south,
             east: appState.bbox.east,
             west: appState.bbox.west,
+            dem_type: source,
         });
         appState.dem = resp.path;
-        alert("DEM listo: " + resp.status);
+        alert("DEM listo: " + resp.dem_type.toUpperCase() + " (" + resp.status + ")");
     } catch (e) {
         alert("Error al descargar DEM: " + e.message);
     }
@@ -30,8 +31,10 @@ async function uploadDEM(file) {
 
 async function runSimulation() {
     if (!appState.bbox) return alert("Selecciona un área en el mapa primero");
+    const demType = document.getElementById("dem-source").value;
     const payload = {
         dem_source: "auto",
+        dem_type: demType === "upload" ? "srtm" : demType,
         north: appState.bbox.north,
         south: appState.bbox.south,
         east: appState.bbox.east,
@@ -68,6 +71,7 @@ async function runSimulation() {
 
 async function runTimeSeries() {
     if (!appState.bbox) return alert("Selecciona un área en el mapa primero");
+    const demType = document.getElementById("dem-source").value;
     const count = parseInt(document.getElementById("ts-count").value) || 5;
     const baseSpeed = parseFloat(document.getElementById("wind-speed").value) || 5;
     const baseDir = parseFloat(document.getElementById("wind-dir").value) || 270;
@@ -75,12 +79,13 @@ async function runTimeSeries() {
     const speeds = [];
     const directions = [];
     for (let i = 0; i < count; i++) {
-        speeds.push(baseSpeed + Math.sin(i / count * Math.PI * 2) * 3);
-        directions.push(baseDir + Math.cos(i / count * Math.PI * 2) * 30);
+        speeds.push(+(baseSpeed + Math.sin(i / count * Math.PI * 2) * 3).toFixed(2));
+        directions.push(+(baseDir + Math.cos(i / count * Math.PI * 2) * 30).toFixed(1));
     }
 
     const payload = {
         dem_source: "auto",
+        dem_type: demType === "upload" ? "srtm" : demType,
         north: appState.bbox.north,
         south: appState.bbox.south,
         east: appState.bbox.east,

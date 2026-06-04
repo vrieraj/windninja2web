@@ -14,9 +14,9 @@ router = APIRouter(prefix="/simulate", tags=["simulation"])
 
 @router.post("/")
 async def create_simulation(req: SimulationRequest):
-    dem_path = resolve_dem(req.dem_source, req.north, req.south, req.east, req.west)
+    dem_path = resolve_dem(req.dem_source, req.north, req.south, req.east, req.west, req.dem_type)
     if dem_path is None:
-        raise HTTPException(400, f"Cannot resolve DEM: {req.dem_source}")
+        raise HTTPException(400, f"Cannot resolve DEM: {req.dem_source} ({req.dem_type})")
 
     task_id = task_manager.create_task()
     config = SimulationConfig(
@@ -128,9 +128,9 @@ async def simulation_grid(task_id: str, index: int = Query(0, ge=0)):
 async def create_timeseries(req: TimeseriesRequest):
     if len(req.speeds) != len(req.directions):
         raise HTTPException(400, "speeds and directions must have same length")
-    dem_path = resolve_dem(req.dem_source, req.north, req.south, req.east, req.west)
+    dem_path = resolve_dem(req.dem_source, req.north, req.south, req.east, req.west, req.dem_type)
     if dem_path is None:
-        raise HTTPException(400, f"Cannot resolve DEM: {req.dem_source}")
+        raise HTTPException(400, f"Cannot resolve DEM: {req.dem_source} ({req.dem_type})")
 
     task_id = task_manager.create_task()
     task_manager.run_timeseries(
