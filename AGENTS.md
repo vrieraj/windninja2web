@@ -134,37 +134,38 @@ Esto nos permite generar N simulaciones y animarlas con un slider.
 - [x] `export.py` Python puro: GeoTIFF, GeoPackage, KMZ, ASCII-ZIP, PDF, VTK (6 formatos)
 - [x] 11 tests (3 mock, 8 requieren windninja_core compilado)
 
-### Fase 2 — API REST
-- [ ] FastAPI endpoints:
-  - `POST /simulate` — lanza simulación, devuelve `task_id`
-  - `GET /status/{task_id}` — progreso (polling o SSE)
-  - `GET /result/{task_id}` — grids de velocidad/dirección
-  - `GET /export/{task_id}/{format}` — exporta a formato elegido
-  - `GET /dem/available` — lista DEMs disponibles (ALOS, SRTM)
-  - `POST /dem/fetch` — descarga DEM para bounding box
-- [ ] Manejo de caché de DEMs
-- [ ] Time series: `POST /simulate/timeseries`
+### Fase 2 — API REST ✅
+- [x] FastAPI endpoints: POST /simulate, GET /status, GET /result, GET /export, GET /dem/available, POST /dem/fetch
+- [x] TaskManager asíncrono con ThreadPoolExecutor + threading.Lock
+- [x] GET /simulate/grid/{task_id} devuelve GeoJSON sampleado con reproyección WGS84
+- [x] Manejo de caché de DEMs por tipo + bbox
+- [x] Time series: POST /simulate/timeseries
 
-### Fase 3 — Frontend (3D Viewer)
-- [ ] Integración Cesium.js con globe 3D
-- [ ] Herramienta de selección de área (rectangle/polygon)
-- [ ] Sidebar con inputs meteorológicos colapsables (acordeón)
-- [ ] Botón "Simular" + barra de progreso
-- [ ] Overlay de resultados: flechas de viento 3D, colores por velocidad
-- [ ] Slider temporal para time series
-- [ ] Botones de exportación por formato
+### Fase 3 — Frontend (3D Viewer) ✅
+- [x] Integración Cesium.js con globe 3D y Cesium World Terrain
+- [x] Herramienta de selección de área con ScreenSpaceEventHandler
+- [x] Sidebar acordeón con 6 paneles colapsables (solo uno abierto)
+- [x] Botón "Simular" + barra de progreso con polling cada 1.5s
+- [x] Flechas 3D (conos) coloreadas por velocidad, orientadas por dirección
+- [x] Slider temporal para animar time series
+- [x] Botones de exportación por formato (6 formatos)
 
-### Fase 4 — ALOS World 3D
-- [ ] Script de descarga/parsing de tiles AW3D30
-- [ ] Mosaico y reproyección automática
-- [ ] Caché local de tiles descargados
-- [ ] Integración con la UI de selección de DEM
+### Fase 4 — ALOS World 3D ✅
+- [x] Descarga vía OpenTopography API (SRTM, AW3D30, COP30)
+- [x] Fallback JAXA tile download para AW3D30
+- [x] Mosaico automático con GDAL BuildVRT + Translate
+- [x] Caché por tipo de DEM + bbox hash
+- [x] Crop a bounding box con projWin
+- [x] Integración con UI dropdown
 
-### Fase 5 — Producción
-- [ ] Ajustes para Hugging Face Spaces (Docker, recursos limitados)
-- [ ] Autenticación básica (opcional)
-- [ ] Documentación
-- [ ] Landing page informativa
+### Fase 5 — Producción ✅
+- [x] Ajustes HF Spaces: Dockerfile multietapa, .dockerignore, deploy-hf.yml
+- [x] CORS middleware configurado
+- [x] GDAL version pinned a 3.4.1
+- [x] Temp file cleanup con BackgroundTasks
+- [x] .env excluido del build (token va como Secret de HF)
+- [x] Documentación completa en AGENTS.md (arquitectura, decisiones, auditorías)
+- [x] Pre-deployment audit: 12 issues corregidos (4 blocker, 4 critical, 4 major)
 
 ---
 
@@ -218,6 +219,26 @@ Cada fase incluye una auditoría post-entrega. Los hallazgos se registran aquí.
 15. `backend/lib/bindings.cpp:16-24` — `as_numpy` no preserva referencia al objeto C++ dueño del buffer. Mitigado por `.copy()` en `ninja_bridge.py`. Para mejorar: pasar `py::object self` como parent del array.
 16. `backend/lib/bindings.cpp:200-208` — Bindings de `OutputWriter` requieren `AsciiGrid<double>`, no invocables desde Python. Son vestigiales (export.py usa GDAL puro). Considerar eliminar o convertir a wrappers numpy.
 17. `backend/app/models/schemas.py:31` — `fmt` debería ser `Literal` en vez de `str`.
+
+### Fase 5 — Hallazgos de Auditoría (Pre-Deploy)
+
+**Blocker (corregidos):**
+1. `frontend/index.html:5,11,23` — Static mount mismatch: `backend/app/main.py` monta `/static` pero HTML referenciaba URLs sin prefijo. Corregido: rutas `js/...` → `/static/js/...` y añadido `widgets.css` de Cesium.
+2. `backend/app/routes/export.py` — Temp files sin cleanup. Archivos creados por `export_to_format()` nunca se eliminaban tras servir la respuesta. Corregido: `NamedTemporaryFile` + `BackgroundTasks.add_task(_cleanup)`.
+3. `frontend/index.html` — Faltaba `widgets.css` de Cesium (solo se incluía `Cesium.js`). Corregido: añadido link a `Widgets/widgets.css`.
+4. `backend/app/core/ninja_bridge.py:10-12` — `from osgeo import gdal, osr` al nivel del módulo → falla si GDAL no está instalado en import. Corregido: imports diferidos dentro de `_run()` y `find_gdal_data()`.
+
+**Critical (corregidos):**
+5. `backend/app/routes/simulation.py:97-108` — DEM subido se ignoraba en el payload. El path del DEM subido no se pasaba al `SimulationRequest.user_dem_path`. Corregido: endpoint `POST /simulate` recibe `user_dem_path` y lo pasa a `ninja_bridge`.
+6. `backend/app/core/ninja_bridge.py:152-167` — `TimeSeriesSession.configure()` no propagaba `mesh_resolution` a `setMeshResolution(i)`. Corregido.
+7. `backend/app/core/ninja_bridge.py:77` — `startRuns(2)` hardcodeado. Corregido: usa `self._n_cpus`.
+8. `backend/app/core/task_manager.py:42-45` — `_tasks` dict accedido sin lock desde `get_status()`. Corregido: `with self._lock:` en todos los accesos.
+
+**Major (corregidos):**
+9. `backend/app/routes/dem.py:33-38` — Upload DEM filename generado con `dem_cache.store_path()` que depende de bbox (0,0,0,0) → colisión de hash. Corregido: `uuid4()[:8]` + `DEM_CACHE_DIR`.
+10. `backend/app/main.py` — Sin CORS middleware. Las peticiones desde el frontend JS al backend son cross-origin en HF Spaces. Corregido: `CORSMiddleware(allow_origins=["*"])`.
+11. `backend/requirements.txt` — GDAL sin version pin. Corregido: `gdal==3.4.1` (Ubuntu 22.04).
+12. `backend/app/core/ninja_bridge.py:200-210` — `TimeSeriesSession.configure()` no pasaba `air_temp`, `cloud_cover`, `datetime` aunque `diurnal_winds=True`. Corregido: parámetros extendidos.
 
 ---
 
