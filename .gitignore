@@ -53,6 +53,9 @@ doxy.tag
 __pycache__/
 *.pyc
 
+# Environment (contains secrets)
+.env
+
 # VS 2022 additions
 /.vs/
 /src/out/
