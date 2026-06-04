@@ -1,5 +1,6 @@
 let viewer, drawActive = false;
 let startPos = null, rectEntity = null;
+let arrowEntities = [];
 
 async function initViewer() {
     const res = await fetch("/api/config");
@@ -92,12 +93,61 @@ function onMouseMove(movement) {
     });
 }
 
-function addWindArrows(speedGrid, dirGrid, bbox) {
-    // Phase 3: create Cesium billboard/vector entities for wind field
+function clearWindArrows() {
+    arrowEntities.forEach(e => viewer.entities.remove(e));
+    arrowEntities = [];
+}
+
+function addWindArrows(geoJson, timeIndex) {
+    clearWindArrows();
+    if (!geoJson || !geoJson.features) return;
+
+    const maxSpeed = geoJson.features.reduce((m, f) => Math.max(m, f.properties.speed || 0), 0) || 1;
+    const bbox = appState.bbox;
+    const latCenter = (bbox.north + bbox.south) / 2;
+
+    geoJson.features.forEach(f => {
+        const [lon, lat] = f.geometry.coordinates;
+        const speed = f.properties.speed || 0;
+        const dir = f.properties.direction || 0;
+        if (speed <= 0) return;
+
+        const rad = (dir - 180) * Math.PI / 180;
+        const u = -Math.sin(rad);
+        const v = -Math.cos(rad);
+        const arrowLength = 300 + (speed / maxSpeed) * 2000;
+
+        const origin = Cesium.Cartesian3.fromDegrees(lon, lat, 50);
+        const dirCart = new Cesium.Cartesian3(u, v, 0);
+        Cesium.Cartesian3.normalize(dirCart, dirCart);
+        Cesium.Cartesian3.multiplyByScalar(dirCart, arrowLength, dirCart);
+
+        const color = Cesium.Color.fromHsl(
+            0.33 - (speed / maxSpeed) * 0.33, 0.8, 0.5
+        );
+
+        const entity = viewer.entities.add({
+            position: origin,
+            cylinder: {
+                length: arrowLength,
+                topRadius: 0,
+                bottomRadius: arrowLength * 0.04,
+                material: color.withAlpha(0.8),
+            },
+            orientation: Cesium.Quaternion.fromAxisAngle(
+                Cesium.Cartesian3.UNIT_Z, Math.atan2(u, v)
+            ),
+        });
+        arrowEntities.push(entity);
+    });
 }
 
 function updateTimeSlider(index, total) {
-    // Phase 3: animate between time steps
+    appState.timeIndex = index;
+    document.getElementById("time-label").textContent = `Paso ${index + 1} / ${total}`;
+    if (appState.windData && appState.windData.length > index) {
+        addWindArrows(appState.windData[index], index);
+    }
 }
 
 document.addEventListener("DOMContentLoaded", initViewer);

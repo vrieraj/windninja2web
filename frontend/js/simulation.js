@@ -1,21 +1,37 @@
 async function fetchDEM() {
-    if (!appState.bbox) return alert("Selecciona un área en el mapa primero");
     const source = document.getElementById("dem-source").value;
-    const resp = await apiPost("/dem/fetch", {
-        source,
-        north: appState.bbox.north,
-        south: appState.bbox.south,
-        east: appState.bbox.east,
-        west: appState.bbox.west,
-    });
-    appState.dem = resp;
-    alert("DEM descargado exitosamente");
+    if (source === "upload") {
+        document.getElementById("file-upload-input").click();
+        return;
+    }
+    if (!appState.bbox) return alert("Selecciona un área en el mapa primero");
+    try {
+        const resp = await apiPost("/dem/fetch", {
+            north: appState.bbox.north,
+            south: appState.bbox.south,
+            east: appState.bbox.east,
+            west: appState.bbox.west,
+        });
+        appState.dem = resp.path;
+        alert("DEM listo: " + resp.status);
+    } catch (e) {
+        alert("Error al descargar DEM: " + e.message);
+    }
+}
+
+async function uploadDEM(file) {
+    const form = new FormData();
+    form.append("file", file);
+    const r = await fetch(`${API_BASE}/dem/upload`, { method: "POST", body: form });
+    const resp = await r.json();
+    appState.dem = resp.path;
+    alert("DEM subido: " + resp.path);
 }
 
 async function runSimulation() {
-    if (!appState.dem) return alert("Descarga o sube un DEM primero");
+    if (!appState.bbox) return alert("Selecciona un área en el mapa primero");
     const payload = {
-        dem_source: appState.dem.id,
+        dem_source: "auto",
         north: appState.bbox.north,
         south: appState.bbox.south,
         east: appState.bbox.east,
@@ -28,35 +44,107 @@ async function runSimulation() {
         number_cpus: 2,
     };
 
-    const diurnal = document.getElementById("diurnal-toggle").checked;
-    if (diurnal) {
-        payload.diurnal_winds = true;
-        payload.air_temp = parseFloat(document.getElementById("air-temp").value);
-        payload.cloud_cover = parseFloat(document.getElementById("cloud-cover").value) / 100;
-        const dt = document.getElementById("sim-datetime").value;
-        if (dt) payload.datetime = dt;
+    document.getElementById("progress-bar").style.display = "block";
+    document.getElementById("progress-fill").style.width = "0%";
+    document.getElementById("export-btn").disabled = true;
+    document.getElementById("time-slider-container").style.display = "none";
+
+    try {
+        const resp = await apiPost("/simulate/", payload);
+        appState.currentTaskId = resp.task_id;
+        appState.currentType = "single";
+
+        await pollStatus(resp.task_id, async () => {
+            const grid = await apiGet(`/simulate/grid/${resp.task_id}`);
+            appState.windData = [grid];
+            appState.timeCount = 1;
+            addWindArrows(grid, 0);
+            document.getElementById("export-btn").disabled = false;
+        });
+    } catch (e) {
+        alert("Error: " + e.message);
+    }
+}
+
+async function runTimeSeries() {
+    if (!appState.bbox) return alert("Selecciona un área en el mapa primero");
+    const count = parseInt(document.getElementById("ts-count").value) || 5;
+    const baseSpeed = parseFloat(document.getElementById("wind-speed").value) || 5;
+    const baseDir = parseFloat(document.getElementById("wind-dir").value) || 270;
+
+    const speeds = [];
+    const directions = [];
+    for (let i = 0; i < count; i++) {
+        speeds.push(baseSpeed + Math.sin(i / count * Math.PI * 2) * 3);
+        directions.push(baseDir + Math.cos(i / count * Math.PI * 2) * 30);
     }
 
+    const payload = {
+        dem_source: "auto",
+        north: appState.bbox.north,
+        south: appState.bbox.south,
+        east: appState.bbox.east,
+        west: appState.bbox.west,
+        speeds,
+        directions,
+        vegetation: document.getElementById("vegetation").value,
+        number_cpus: 2,
+    };
+
     document.getElementById("progress-bar").style.display = "block";
+    document.getElementById("progress-fill").style.width = "0%";
     document.getElementById("export-btn").disabled = true;
+    document.getElementById("time-slider-container").style.display = "none";
 
-    const resp = await apiPost("/simulate/", payload);
-    appState.currentTaskId = resp.task_id;
+    try {
+        const resp = await apiPost("/simulate/timeseries", payload);
+        appState.currentTaskId = resp.task_id;
+        appState.currentType = "timeseries";
 
-    const poll = setInterval(async () => {
-        const status = await apiGet(`/simulate/status/${resp.task_id}`);
-        const fill = document.getElementById("progress-fill");
-        fill.style.width = `${status.progress * 100}%`;
-        if (status.status === "completed") {
-            clearInterval(poll);
-            appState.tasks[resp.task_id] = status;
+        await pollStatus(resp.task_id, async () => {
+            const grids = [];
+            for (let i = 0; i < count; i++) {
+                const g = await apiGet(`/simulate/grid/${resp.task_id}?index=${i}`);
+                grids.push(g);
+            }
+            appState.windData = grids;
+            appState.timeCount = count;
+            appState.timeIndex = 0;
+            addWindArrows(grids[0], 0);
+            document.getElementById("time-slider-container").style.display = "block";
+            document.getElementById("time-label").textContent = `Paso 1 / ${count}`;
+            document.getElementById("time-slider").max = count - 1;
+            document.getElementById("time-slider").value = 0;
             document.getElementById("export-btn").disabled = false;
-            alert("Simulación completada");
-        } else if (status.status === "failed") {
-            clearInterval(poll);
-            alert("Error en la simulación");
-        }
-    }, 1000);
+        });
+    } catch (e) {
+        alert("Error: " + e.message);
+    }
+}
+
+async function pollStatus(taskId, onComplete) {
+    return new Promise((resolve, reject) => {
+        const poll = setInterval(async () => {
+            try {
+                const status = await apiGet(`/simulate/status/${taskId}`);
+                const fill = document.getElementById("progress-fill");
+                fill.style.width = `${(status.progress || 0) * 100}%`;
+
+                if (status.status === "completed") {
+                    clearInterval(poll);
+                    document.getElementById("progress-fill").style.width = "100%";
+                    await onComplete();
+                    resolve();
+                } else if (status.status === "failed") {
+                    clearInterval(poll);
+                    reject(new Error(status.error || "Simulación falló"));
+                }
+            } catch (e) {
+                clearInterval(poll);
+                reject(e);
+            }
+        }, 1500);
+    });
 }
 
 async function exportResult() {

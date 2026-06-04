@@ -1,8 +1,10 @@
 import json
 import tempfile
 from pathlib import Path
-from fastapi import APIRouter, HTTPException
+import numpy as np
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
+from osgeo import osr
 from backend.app.models.schemas import SimulationRequest, TimeseriesRequest
 from backend.app.core.task_manager import task_manager, TaskStatus
 from backend.app.core.ninja_bridge import SimulationConfig
@@ -68,6 +70,59 @@ async def simulation_result(task_id: str):
         "yllcorner": result.yllcorner,
         "projection": result.projection,
     }
+
+@router.get("/grid/{task_id}")
+async def simulation_grid(task_id: str, index: int = Query(0, ge=0)):
+    t = task_manager.get_status(task_id)
+    if t is None:
+        raise HTTPException(404, f"Task {task_id} not found")
+    if t["status"] != TaskStatus.COMPLETED:
+        raise HTTPException(400, f"Task status is {t['status']}")
+    result = t["result"]
+    if result is None:
+        raise HTTPException(500, "No result data")
+
+    if isinstance(result, list):
+        if index >= len(result):
+            raise HTTPException(400, f"Index {index} out of range ({len(result)} steps)")
+        res = result[index]
+    else:
+        if index > 0:
+            raise HTTPException(400, "Single simulation has only index 0")
+        res = result
+
+    step = max(1, res.nrows // 30, res.ncols // 30)
+    features = []
+
+    ct = None
+    if res.projection:
+        src_sr = osr.SpatialReference()
+        src_sr.ImportFromWkt(res.projection)
+        tgt_sr = osr.SpatialReference()
+        tgt_sr.ImportFromEPSG(4326)
+        if not src_sr.IsSame(tgt_sr):
+            ct = osr.CoordinateTransformation(src_sr, tgt_sr)
+
+    for r in range(0, res.nrows, step):
+        for c in range(0, res.ncols, step):
+            spd = float(res.speed[r, c])
+            if spd <= 0:
+                continue
+            x = res.xllcorner + (c + 0.5) * res.cell_size
+            y = res.yllcorner + (r + 0.5) * res.cell_size
+            if ct:
+                lon, lat, _ = ct.TransformPoint(x, y)
+            else:
+                lon, lat = x, y
+            features.append({
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                "properties": {
+                    "speed": round(spd, 2),
+                    "direction": round(float(res.direction[r, c]), 1),
+                },
+            })
+    return {"type": "FeatureCollection", "features": features}
 
 @router.post("/timeseries")
 async def create_timeseries(req: TimeseriesRequest):
