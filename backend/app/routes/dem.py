@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Literal
 from fastapi import APIRouter, HTTPException, UploadFile
 from pydantic import BaseModel, Field
-from backend.app.core.dem_cache import dem_cache, resolve_dem, _fetch_dem
+from backend.app.core.dem_cache import dem_cache, resolve_dem, _fetch_dem, DEM_CACHE_DIR
 
 router = APIRouter(prefix="/dem", tags=["dem"])
 
@@ -27,6 +27,8 @@ async def fetch_dem(req: FetchDemRequest):
         raise HTTPException(502, f"Failed to download DEM ({req.dem_type}) from any source")
     return {"status": "downloaded", "path": str(path), "dem_type": req.dem_type}
 
+import uuid as uuid_mod
+
 @router.post("/upload")
 async def upload_dem(file: UploadFile):
     if not file.filename:
@@ -34,7 +36,10 @@ async def upload_dem(file: UploadFile):
     ext = Path(file.filename).suffix
     if ext.lower() not in (".tif", ".tiff", ".asc", ".bil"):
         raise HTTPException(400, "Unsupported DEM format. Use .tif, .asc, or .bil")
-    dest = dem_cache.store_path(0, 0, 0, 0, "upload", ext)
+    if file.size and file.size > 100 * 1024 * 1024:
+        raise HTTPException(400, "DEM file too large (max 100MB)")
+    uid = str(uuid_mod.uuid4())[:8]
+    dest = DEM_CACHE_DIR / f"upload_{uid}{ext}"
     content = await file.read()
     with open(dest, "wb") as f:
         f.write(content)

@@ -17,6 +17,9 @@ class SimulationRequest(BaseModel):
     mesh_resolution: float = 100.0
     output_speed_units: Literal["mps", "mph", "kph", "kts"] = "mps"
     number_cpus: int = 2
+    air_temp: Optional[float] = None
+    cloud_cover: Optional[float] = None
+    datetime: Optional[str] = None
 
 class TimeseriesRequest(BaseModel):
     dem_source: str
@@ -29,7 +32,12 @@ class TimeseriesRequest(BaseModel):
     directions: list[float] = Field(..., min_length=1)
     vegetation: str = "grass"
     mesh_resolution: float = 100.0
+    input_wind_height: float = 10.0
+    output_wind_height: float = 10.0
     number_cpus: int = 2
+    diurnal_winds: bool = False
+    air_temp: Optional[float] = None
+    cloud_cover: Optional[float] = None
 
 class ExportRequest(BaseModel):
     fmt: Literal["geotiff", "gpkg", "kmz", "ascii-zip", "pdf", "vtk"]
