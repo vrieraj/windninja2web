@@ -48,9 +48,10 @@ function fillPanels() {
     dem.innerHTML = `
     <label>Seleccionar origen del DEM</label>
     <select id="dem-source">
-      <option value="alos">ALOS World 3D (30m)</option>
+      <option value="alos">ALOS World 3D (30m) — recomendado</option>
       <option value="srtm">SRTM (30m)</option>
-      <option value="upload">Subir archivo</option>
+      <option value="cop30">COP30 (30m)</option>
+      <option value="upload">Subir archivo propio</option>
     </select>
     <button class="btn btn-primary" onclick="toggleDraw()">Seleccionar área en el mapa</button>
     <button class="btn" style="background:#585b70;color:#cdd6f4;margin-top:4px;" onclick="fetchDEM()">Descargar DEM</button>

@@ -3,6 +3,7 @@ from typing import Optional, Literal
 
 class SimulationRequest(BaseModel):
     dem_source: str = Field(..., description="DEM path or 'auto' to download")
+    dem_type: Literal["srtm", "alos", "cop30"] = "srtm"
     north: float = Field(..., ge=-90, le=90)
     south: float = Field(..., ge=-90, le=90)
     east: float = Field(..., ge=-180, le=180)
@@ -19,6 +20,7 @@ class SimulationRequest(BaseModel):
 
 class TimeseriesRequest(BaseModel):
     dem_source: str
+    dem_type: Literal["srtm", "alos", "cop30"] = "srtm"
     north: float = Field(..., ge=-90, le=90)
     south: float = Field(..., ge=-90, le=90)
     east: float = Field(..., ge=-180, le=180)
