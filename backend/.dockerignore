@@ -1,0 +1,11 @@
+.git/
+.gitignore
+*.md
+.idea/
+__pycache__/
+*.pyc
+*.pyo
+build/
+*.so
+*.dll
+*.dylib
