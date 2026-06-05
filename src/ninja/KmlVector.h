@@ -128,10 +128,10 @@ public:
     bool writeTurbulence(VSILFILE *fileOut);
     bool writeColMax(VSILFILE *fileOut);
     #ifdef FRICTION_VELOCITY
-    bool writeUstar(FILE *fileOut);
+    bool writeUstar(VSILFILE *fileOut);
     #endif
     #ifdef EMISSIONS
-    bool writeDust(FILE *fileOut);
+    bool writeDust(VSILFILE *fileOut);
     #endif
 
     void setDemFile(std::string fileName){demFile = fileName;}

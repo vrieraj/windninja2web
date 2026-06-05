@@ -108,7 +108,8 @@ void Dust::MakeGrid(WindNinjaInputs &input, AsciiGrid<double> &grid)
     /* -------------------------------------------------------------------- */
 
     char *pszSrcWKT;
-    OGRSpatialReference *poSrcSRS, oDstSRS;
+    const OGRSpatialReference *poSrcSRS;
+    OGRSpatialReference oDstSRS;
     poSrcSRS = poLayer->GetSpatialRef(); //shapefile CRS
     poSrcSRS->exportToWkt( &pszSrcWKT );
 

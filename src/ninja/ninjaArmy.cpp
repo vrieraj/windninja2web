@@ -27,6 +27,7 @@
 *
 *****************************************************************************/
 
+#include <algorithm>
 #include "ninjaArmy.h"
 /**
 * @brief Default constructor.
@@ -401,7 +402,7 @@ bool ninjaArmy::startRuns(int numProcessors)
 
         dfRatioH = dfHeight * nDPI / nYSize;
         dfRatioW = dfWidth * nDPI / nXSize;
-        dfRatio = MIN( dfRatioH, dfRatioW );
+        dfRatio = std::min( dfRatioH, dfRatioW );
 
         int nNewXSize = nXSize * dfRatio;
         int nNewYSize = nYSize * dfRatio;

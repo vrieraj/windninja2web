@@ -73,6 +73,8 @@ ninja::ninja()
     solar=NULL;
     outputDirectionArray=NULL;
     outputSpeedArray=NULL;
+    outputSpeedArrayResolution=-1.0;
+    outputDirectionArrayResolution=-1.0;
     nMaxMatchingIters = atoi( CPLGetConfigOption( "NINJA_POINT_MAX_MATCH_ITERS",
                                                   "150" ) );
     CPLDebug( "NINJA", "Maximum match iterations set to: %d", nMaxMatchingIters );
@@ -4782,8 +4784,10 @@ void ninja::set_outputDirectionGridResolution(double resolution, lengthUnits::eL
 }
 
 double* ninja::get_outputSpeedGrid() {
+    double res = outputSpeedArrayResolution;
+    if(res <= 0.0) res = VelocityGrid.get_cellSize();
     AsciiGrid<double> * velTempGrid;
-    velTempGrid = new AsciiGrid<double>(VelocityGrid.resample_Grid(outputSpeedArrayResolution, AsciiGrid<double>::order0));
+    velTempGrid = new AsciiGrid<double>(VelocityGrid.resample_Grid(res, AsciiGrid<double>::order0));
     outputSpeedArray = new double[velTempGrid->get_arraySize()];
     for (int i = 0; i < velTempGrid->get_nRows(); ++i) {
         for (int j = 0; j < velTempGrid->get_nCols(); ++j) {
@@ -4796,8 +4800,10 @@ double* ninja::get_outputSpeedGrid() {
 
 double* ninja::get_outputDirectionGrid()
 {
+    double res = outputDirectionArrayResolution;
+    if(res <= 0.0) res = AngleGrid.get_cellSize();
     AsciiGrid<double> *dirTempGrid;
-    dirTempGrid = new AsciiGrid<double> (AngleGrid.resample_Grid(outputDirectionArrayResolution, AsciiGrid<double>::order0));
+    dirTempGrid = new AsciiGrid<double> (AngleGrid.resample_Grid(res, AsciiGrid<double>::order0));
     outputDirectionArray = new double[dirTempGrid->get_arraySize()];
     for(int i=0; i<dirTempGrid->get_nRows(); i++){
         for(int j=0; j<dirTempGrid->get_nCols(); j++){
