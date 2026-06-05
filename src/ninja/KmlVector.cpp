@@ -1595,7 +1595,7 @@ bool KmlVector::writeColMax(VSILFILE *fileOut)
 }
 
 #ifdef FRICTION_VELOCITY
-bool KmlVector::writeUstar(FILE *fileOut)
+bool KmlVector::writeUstar(VSILFILE *fileOut)
 {
     ustar_png = "ustar.png";
 
@@ -1701,7 +1701,7 @@ bool KmlVector::writeUstar(FILE *fileOut)
 #endif
 
 #ifdef EMISSIONS
-bool KmlVector::writeDust(FILE *fileOut)
+bool KmlVector::writeDust(VSILFILE *fileOut)
 {
     dust_png = "dust.png";
 
