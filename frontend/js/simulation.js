@@ -1,10 +1,28 @@
+function setStatus(msg, type) {
+    const el = document.getElementById("status-msg");
+    if (!el) return;
+    el.textContent = msg;
+    el.className = "status-msg " + (type || "info");
+    el.style.display = "block";
+}
+
+function clearStatus() {
+    const el = document.getElementById("status-msg");
+    if (el) el.style.display = "none";
+}
+
 async function fetchDEM() {
     const source = document.getElementById("dem-source").value;
     if (source === "upload") {
         document.getElementById("file-upload-input").click();
         return;
     }
-    if (!appState.bbox) return alert("Selecciona un área en el mapa primero");
+    if (!appState.bbox) return setStatus("Selecciona un área en el mapa primero", "error");
+    const btn = document.getElementById("fetch-dem-btn");
+    const origText = btn.textContent;
+    btn.innerHTML = '<span class="spinner"></span> Descargando…';
+    btn.disabled = true;
+    setStatus("Descargando DEM…", "info");
     try {
         const resp = await apiPost("/dem/fetch", {
             north: appState.bbox.north,
@@ -14,9 +32,17 @@ async function fetchDEM() {
             dem_type: source,
         });
         appState.dem = resp.path;
-        alert("DEM listo: " + resp.dem_type.toUpperCase() + " (" + resp.status + ")");
+        setStatus("DEM listo: " + resp.dem_type.toUpperCase() + " (" + resp.status + ")", "success");
+        try {
+            await window.show3DView();
+        } catch (err) {
+            setStatus("Error en vista 3D: " + err.message, "error");
+        }
     } catch (e) {
-        alert("Error al descargar DEM: " + e.message);
+        setStatus("Error al descargar DEM: " + e.message, "error");
+    } finally {
+        btn.innerHTML = origText;
+        btn.disabled = false;
     }
 }
 
@@ -29,101 +55,144 @@ async function uploadDEM(file) {
     alert("DEM subido: " + resp.path);
 }
 
-async function runSimulation() {
-    if (!appState.bbox) return alert("Selecciona un área en el mapa primero");
+function _basePayload() {
+    if (!appState.bbox) { alert("Selecciona un área en el mapa primero"); return null; }
     const demType = document.getElementById("dem-source").value;
-    const payload = {
+    const p = {
         dem_source: demType === "upload" && appState.dem ? appState.dem : "auto",
         dem_type: demType === "upload" ? "srtm" : demType,
         north: appState.bbox.north,
         south: appState.bbox.south,
         east: appState.bbox.east,
         west: appState.bbox.west,
-        input_speed: parseFloat(document.getElementById("wind-speed").value),
-        input_direction: parseFloat(document.getElementById("wind-dir").value),
-        input_wind_height: parseFloat(document.getElementById("wind-height").value),
         vegetation: document.getElementById("vegetation").value,
-        mesh_resolution: parseFloat(document.getElementById("mesh-res").value),
         number_cpus: 2,
+        input_wind_height: parseFloat(document.getElementById("wind-height").value) || 10,
+        output_wind_height: parseFloat(document.getElementById("wind-height").value) || 10,
+        mesh_resolution: parseFloat(document.getElementById("mesh-res").value) || 100,
     };
+    if (document.getElementById("diurnal-toggle").checked) {
+        p.diurnal_winds = true;
+    }
+    if (document.getElementById("stability-toggle").checked) {
+        p.non_neutral_stability = true;
+    }
+    p.time_zone = document.getElementById("timezone").value;
+    return p;
+}
 
+function _showProgress() {
     document.getElementById("progress-bar").style.display = "block";
     document.getElementById("progress-fill").style.width = "0%";
     document.getElementById("export-btn").disabled = true;
     document.getElementById("time-slider-container").style.display = "none";
 
-    try {
-        const resp = await apiPost("/simulate/", payload);
-        appState.currentTaskId = resp.task_id;
-        appState.currentType = "single";
-
-        await pollStatus(resp.task_id, async () => {
-            const grid = await apiGet(`/simulate/grid/${resp.task_id}`);
-            appState.windData = [grid];
-            appState.timeCount = 1;
-            addWindArrows(grid, 0);
-            document.getElementById("export-btn").disabled = false;
-        });
-    } catch (e) {
-        alert("Error: " + e.message);
+    if (window.currentView !== '3d' && appState.bbox && appState.dem) {
+        window.show3DView();
     }
 }
 
-async function runTimeSeries() {
-    if (!appState.bbox) return alert("Selecciona un área en el mapa primero");
-    const demType = document.getElementById("dem-source").value;
-    const count = parseInt(document.getElementById("ts-count").value) || 5;
-    const baseSpeed = parseFloat(document.getElementById("wind-speed").value) || 5;
-    const baseDir = parseFloat(document.getElementById("wind-dir").value) || 270;
+async function runSimulation() {
+    const base = _basePayload();
+    if (!base) return;
+    const hd = getHourlyData();
 
-    const speeds = [];
-    const directions = [];
-    for (let i = 0; i < count; i++) {
-        speeds.push(+(baseSpeed + Math.sin(i / count * Math.PI * 2) * 3).toFixed(2));
-        directions.push(+(baseDir + Math.cos(i / count * Math.PI * 2) * 30).toFixed(1));
-    }
+    _showProgress();
 
-    const payload = {
-        dem_source: demType === "upload" && appState.dem ? appState.dem : "auto",
-        dem_type: demType === "upload" ? "srtm" : demType,
-        north: appState.bbox.north,
-        south: appState.bbox.south,
-        east: appState.bbox.east,
-        west: appState.bbox.west,
-        speeds,
-        directions,
-        vegetation: document.getElementById("vegetation").value,
-        number_cpus: 2,
-    };
+    const simBtn = document.getElementById("sim-btn");
+    const origText = simBtn.textContent;
+    simBtn.innerHTML = '<span class="spinner"></span> Simulando…';
+    simBtn.disabled = true;
+    setStatus("Iniciando simulación…", "info");
 
-    document.getElementById("progress-bar").style.display = "block";
-    document.getElementById("progress-fill").style.width = "0%";
-    document.getElementById("export-btn").disabled = true;
-    document.getElementById("time-slider-container").style.display = "none";
+    const diurnal = document.getElementById("diurnal-toggle").checked;
+    const stability = document.getElementById("stability-toggle").checked;
+    const dialEnabled = diurnal || stability;
 
     try {
-        const resp = await apiPost("/simulate/timeseries", payload);
-        appState.currentTaskId = resp.task_id;
-        appState.currentType = "timeseries";
-
-        await pollStatus(resp.task_id, async () => {
-            const grids = [];
-            for (let i = 0; i < count; i++) {
-                const g = await apiGet(`/simulate/grid/${resp.task_id}?index=${i}`);
-                grids.push(g);
+        if (hd.count === 1) {
+            const payload = {
+                ...base,
+                input_speed: hd.speeds[0],
+                input_direction: hd.directions[0],
+            };
+            if (dialEnabled) {
+                payload.air_temp = hd.temps[0];
+                payload.cloud_cover = hd.clouds[0];
+                const hourVal = parseInt(document.querySelector("#hourly-table tbody tr").dataset.hour) || 12;
+                payload.hour = hourVal;
+                if (hd.dates[0]) {
+                    const d = new Date(hd.dates[0] + "T" + String(hourVal).padStart(2, "0") + ":00");
+                    payload.year = d.getFullYear();
+                    payload.month = d.getMonth() + 1;
+                    payload.day = d.getDate();
+                }
             }
-            appState.windData = grids;
-            appState.timeCount = count;
-            appState.timeIndex = 0;
-            addWindArrows(grids[0], 0);
-            document.getElementById("time-slider-container").style.display = "block";
-            document.getElementById("time-label").textContent = `Paso 1 / ${count}`;
-            document.getElementById("time-slider").max = count - 1;
-            document.getElementById("time-slider").value = 0;
-            document.getElementById("export-btn").disabled = false;
-        });
+            setStatus("Lanzando simulación simple…", "info");
+            const resp = await apiPost("/simulate/", payload);
+            appState.currentTaskId = resp.task_id;
+            appState.currentType = "single";
+
+            await pollStatus(resp.task_id, async () => {
+                setStatus("Cargando resultados…", "info");
+                const grid = await apiGet(`/simulate/grid/${resp.task_id}`);
+                appState.windData = [grid];
+                appState.timeCount = 1;
+                window.addWindArrows(grid, 0);
+                document.getElementById("export-btn").disabled = false;
+                setStatus("Simulación completada", "success");
+            });
+        } else {
+            const payload = {
+                ...base,
+                speeds: hd.speeds,
+                directions: hd.directions,
+            };
+            if (dialEnabled) {
+                payload.air_temp = hd.temps[0];
+                payload.cloud_cover = hd.clouds[0];
+                const rows = document.querySelectorAll("#hourly-table tbody tr");
+                if (rows.length > 0) {
+                    const r = rows[0];
+                    const hourVal = parseInt(r.dataset.hour) || 12;
+                    payload.hour = hourVal;
+                    if (hd.dates[0]) {
+                        const d = new Date(hd.dates[0] + "T" + String(hourVal).padStart(2, "0") + ":00");
+                        payload.year = d.getFullYear();
+                        payload.month = d.getMonth() + 1;
+                        payload.day = d.getDate();
+                    }
+                }
+            }
+            setStatus("Lanzando serie temporal (" + hd.count + " pasos)…", "info");
+            const resp = await apiPost("/simulate/timeseries", payload);
+            appState.currentTaskId = resp.task_id;
+            appState.currentType = "timeseries";
+
+            await pollStatus(resp.task_id, async () => {
+                setStatus("Cargando resultados…", "info");
+                const grids = [];
+                for (let i = 0; i < hd.count; i++) {
+                    const g = await apiGet(`/simulate/grid/${resp.task_id}?index=${i}`);
+                    grids.push(g);
+                }
+                appState.windData = grids;
+                appState.timeCount = hd.count;
+                appState.timeIndex = 0;
+                window.addWindArrows(grids[0], 0);
+                document.getElementById("time-slider-container").style.display = "block";
+                document.getElementById("time-label").textContent = `Paso 1 / ${hd.count}`;
+                document.getElementById("time-slider").max = hd.count - 1;
+                document.getElementById("time-slider").value = 0;
+                document.getElementById("export-btn").disabled = false;
+                setStatus("Simulación completada (" + hd.count + " pasos)", "success");
+            });
+        }
     } catch (e) {
-        alert("Error: " + e.message);
+        setStatus("Error: " + e.message, "error");
+    } finally {
+        simBtn.innerHTML = origText;
+        simBtn.disabled = false;
     }
 }
 

@@ -56,6 +56,15 @@ __pycache__/
 # Environment (contains secrets)
 .env
 
+# Data caches
+data/
+
+# Python venv
+backend/.venv/
+
+# Build artifacts
+backend/lib/build/
+
 # VS 2022 additions
 /.vs/
 /src/out/
