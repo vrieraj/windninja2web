@@ -73,6 +73,13 @@ function fillPanels() {
     </select>
     <label>Resolución de malla (m)</label>
     <input type="number" id="mesh-res" value="100" min="10" step="10">
+    <hr style="margin:6px 0;border-color:#313244;">
+    <label>Exageración vertical</label>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <input type="range" id="exaggeration-slider" min="0.5" max="5" step="0.1" value="1.5"
+             oninput="setTerrainExaggeration(this.value)" style="flex:1;">
+      <span id="exaggeration-value" style="font-size:0.8rem;min-width:35px;">1.5x</span>
+    </div>
   `;
 
     const meteo = document.getElementById("meteo-panel");
@@ -115,7 +122,11 @@ function fillPanels() {
     </div>
     <div id="status-msg" class="status-msg" style="display:none;margin-top:4px;"></div>
     <div id="time-slider-container" style="display:none;margin-top:6px;">
-      <label id="time-label" style="font-size:0.75rem;">Paso 1 / 1</label>
+      <div style="display:flex;align-items:center;gap:4px;justify-content:center;">
+        <button class="step-btn" onclick="stepTime(-1)" title="Paso anterior">◀</button>
+        <label id="time-label" style="font-size:0.75rem;margin:0;flex:1;text-align:center;">Paso 1 / 1</label>
+        <button class="step-btn" onclick="stepTime(1)" title="Paso siguiente">▶</button>
+      </div>
       <input type="range" id="time-slider" min="0" max="0" value="0"
              oninput="onTimeSlider(this)" style="width:100%;">
     </div>
@@ -205,7 +216,7 @@ function updateArrow(input) {
 
 function getHourlyData() {
     const rows = document.querySelectorAll("#hourly-table tbody tr");
-    const speeds = [], directions = [], dates = [], clouds = [], temps = [];
+    const speeds = [], directions = [], dates = [], clouds = [], temps = [], hours = [];
     rows.forEach((r) => {
         const inputs = r.querySelectorAll("input");
         speeds.push(parseFloat(inputs[1].value) || 0);
@@ -213,8 +224,9 @@ function getHourlyData() {
         dates.push(inputs[3].value || "");    // date
         clouds.push(parseInt(inputs[4].value) || 0);  // cloud
         temps.push(parseFloat(inputs[5].value) || 0); // temp
+        hours.push(parseInt(r.dataset.hour) || 0);
     });
-    return { speeds, directions, dates, clouds, temps, count: speeds.length };
+    return { speeds, directions, dates, clouds, temps, hours, count: speeds.length };
 }
 
 document.addEventListener("DOMContentLoaded", buildSidebar);

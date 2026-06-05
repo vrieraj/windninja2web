@@ -382,11 +382,14 @@ Prioridad alta (esencial para MVP):
 
 4. **Timeseries per-file formats devuelven solo el último** (`routes/export.py`). Para formatos que producen N archivos (geotiff, pdf, vtk) con timeseries, ahora se empaquetan en ZIP.
 
-#### Próximos pasos
-- Probar frontend en navegador real (Cesium.js + sidebar + simular + exportar)
-- Probar DEM fetch desde OpenTopography API
-- Configurar deploy a Hugging Face Spaces (Docker multietapa)
-- Ejecutar lint/typecheck
+#### Próximos pasos (pendientes)
+- [ ] **README**: actualizar con estado actual, instrucciones de uso local, enlaces a documentación.
+- [ ] **Open-Meteo API**: integrar datos meteorológicos reales (temperatura, nubosidad, viento) como alternativa a entrada manual.
+- [ ] **Refactorización**: limpiar código frontend (módulos ES, separar lógica 3D del visor, estado global), unificar manejo de errores backend.
+- [ ] **Deploy HF Spaces**: Docker multietapa funcional, secrets (Cesium token), CI/CD.
+- [ ] Probar frontend en navegador real (simular + exportar + time slider)
+- [ ] Probar DEM fetch desde OpenTopography API
+- [ ] Ejecutar lint/typecheck
 
 - **OpenMP**: WindNinja usa multithreading. En Hugging Face Spaces con CPU limitada, configurar `set_numberCPUs(1)` o `2`.
 - **GDAL**: Necesario en runtime para DEM I/O y output formats. Ya incluido en la cadena de dependencias.

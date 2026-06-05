@@ -20,7 +20,7 @@ CACHE_MAX_AGE = 86400
 
 ESRI_URLS = {
     "satellite": "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export",
-    "standard": "https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/export",
+    "standard": "https://services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/export",
     "hybrid": "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export",
 }
 LABELS_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/export"

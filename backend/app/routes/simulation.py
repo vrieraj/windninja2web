@@ -109,6 +109,7 @@ async def simulation_grid(task_id: str, index: int = Query(0, ge=0)):
         src_sr.ImportFromWkt(res.projection)
         tgt_sr = osr.SpatialReference()
         tgt_sr.ImportFromEPSG(4326)
+        tgt_sr.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
         if not src_sr.IsSame(tgt_sr):
             ct = osr.CoordinateTransformation(src_sr, tgt_sr)
 
