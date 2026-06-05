@@ -4,12 +4,26 @@ Provides high-level Simulation and TimeSeries wrappers.
 """
 
 import os
+import sys
 import logging
+from pathlib import Path
 import numpy as np
 from dataclasses import dataclass
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# Boost date_time uses IANA timezone names.
+# "Etc/UTC" is the canonical name for UTC in the Olson database.
+_TZ_MAP = {
+    "UTC": "Etc/UTC",
+    "utc": "Etc/UTC",
+    "GMT": "Etc/GMT",
+    "gmt": "Etc/GMT",
+}
+
+def _map_timezone(tz: str) -> str:
+    return _TZ_MAP.get(tz, tz)
 
 _core = None
 
@@ -17,15 +31,50 @@ def _load_core():
     global _core
     if _core is not None:
         return _core
+    import sys
+    lib_dir = Path(__file__).resolve().parent.parent.parent / "lib" / "build"
+    if lib_dir.exists() and str(lib_dir) not in sys.path:
+        sys.path.insert(0, str(lib_dir))
     try:
         import windninja_core
         _core = windninja_core
+        _init_windninja()
         return _core
     except ImportError as e:
         raise RuntimeError(
             "windninja_core module not found. "
-            "Set PYTHONPATH to the directory containing windninja_core.so"
+            f"Searched in {lib_dir} but could not import."
         ) from e
+
+
+def _init_windninja():
+    """Initialize WindNinja internals (timezone DB, etc.)."""
+    wn_data = Path(__file__).resolve().parent.parent.parent.parent / "data"
+    csv_path = wn_data / "date_time_zonespec.csv"
+    if not csv_path.exists():
+        logger.warning("WindNinja data dir %s has no date_time_zonespec.csv", wn_data)
+        return
+
+    # Try full NinjaInitialize first (needs GDAL_DATA)
+    try:
+        from osgeo import gdal
+        gdal_data = gdal.GetConfigOption("GDAL_DATA") or os.environ.get("GDAL_DATA")
+        if not gdal_data:
+            for p in ["/usr/share/gdal", "/usr/local/share/gdal"]:
+                if (Path(p) / "gdalicon.png").exists():
+                    gdal_data = p
+                    break
+        if gdal_data and (Path(gdal_data) / "gdalicon.png").exists():
+            ret = _core.initialize(str(gdal_data), str(wn_data))
+            logger.info("NinjaInitialize returned %d", ret)
+            return
+        logger.info("GDAL_DATA not found, loading timezone DB directly")
+    except Exception as exc:
+        logger.warning("NinjaInitialize failed: %s, falling back to direct timezone load", exc)
+
+    # Fallback: load timezone DB directly
+    _core.load_timezone_db(str(csv_path))
+    logger.info("Timezone DB loaded from %s", csv_path)
 
 
 @dataclass
@@ -40,6 +89,7 @@ class SimulationConfig:
     output_speed_units: str = "mps"
     output_wind_height: float = 10.0
     diurnal_winds: bool = False
+    non_neutral_stability: bool = False
     air_temp: Optional[float] = None
     cloud_cover: Optional[float] = None
     year: Optional[int] = None
@@ -88,6 +138,7 @@ class NinjaSession:
         n.set_uniVegetation(veg_map.get(config.vegetation, self._core.Vegetation.grass))
 
         n.set_meshResolution(config.mesh_resolution, self._core.LengthUnits.meters)
+        n.set_numVertLayers(20)
         n.set_numberCPUs(config.number_cpus)
         n.set_outputWindHeight(config.output_wind_height, self._core.LengthUnits.meters)
 
@@ -103,15 +154,21 @@ class NinjaSession:
 
         if config.diurnal_winds:
             n.set_diurnalWinds(True)
+
+        if config.non_neutral_stability:
+            n.set_stabilityFlag(True)
+
+        if config.diurnal_winds or config.non_neutral_stability:
             if config.air_temp is not None:
                 n.set_uniAirTemp(config.air_temp, self._core.TempUnits.C)
             if config.cloud_cover is not None:
                 n.set_uniCloudCover(config.cloud_cover, self._core.CoverUnits.percent)
             if config.year is not None:
+                tz = _map_timezone(config.time_zone)
                 n.set_date_time(
                     config.year, config.month, config.day,
                     config.hour, config.minute, config.second,
-                    config.time_zone)
+                    tz)
 
         self._configured = True
 
@@ -141,12 +198,11 @@ class NinjaSession:
 
 
 class TimeSeriesSession:
-    """Multi-run time series simulation using ninjaArmy."""
+    """Multi-run time series simulation using sequential Ninja calls."""
 
     def __init__(self):
         self._core = _load_core()
-        self._army = self._core.NinjaArmy()
-        self._n_runs = 0
+        self._configs: list[SimulationConfig] = []
 
     def configure(self, dem_path: str, speeds: list[float],
                   directions: list[float], vegetation: str = "grass",
@@ -154,55 +210,38 @@ class TimeSeriesSession:
                   input_wind_height: float = 10.0,
                   output_wind_height: float = 10.0,
                   diurnal_winds: bool = False,
+                  non_neutral_stability: bool = False,
                   air_temp: float = None, cloud_cover: float = None,
                   year: int = None, month: int = None,
                   day: int = None, hour: int = None,
-                  time_zone: str = "UTC"):
-        n_runs = len(speeds)
-        if len(directions) != n_runs:
+                  time_zone: Optional[str] = "UTC"):
+        if len(directions) != len(speeds):
             raise ValueError("speeds and directions must have same length")
-        self._n_runs = n_runs
-        self._n_cpus = number_cpus
-
-        self._army.makeDomainAverageArmy(n_runs)
-        for i in range(n_runs):
-            self._army.setDEM(i, dem_path)
-            self._army.setInputSpeed(i, speeds[i], "mps")
-            self._army.setInputDirection(i, directions[i])
-            self._army.setUniVegetation(i, vegetation)
-            self._army.setNumberCPUs(i, number_cpus)
-            self._army.setMeshResolution(i, mesh_resolution, "meters")
-            self._army.setInputWindHeight(i, input_wind_height, "meters")
-            self._army.setOutputWindHeight(i, output_wind_height, "meters")
-            self._army.setPosition(i)
-            self._army.setInitializationMethod(i, "domainAverage")
-            if diurnal_winds:
-                self._army.setDiurnalWinds(i, True)
-                if air_temp is not None:
-                    self._army.setUniAirTemp(i, air_temp, "C")
-                if cloud_cover is not None:
-                    self._army.setUniCloudCover(i, cloud_cover, "percent")
-                if year is not None:
-                    self._army.setDateTime(i, year, month, day, hour, 0, 0, time_zone)
+        self._configs = [
+            SimulationConfig(
+                dem_path=dem_path,
+                input_speed=speeds[i],
+                input_direction=directions[i],
+                vegetation=vegetation,
+                number_cpus=number_cpus,
+                mesh_resolution=mesh_resolution,
+                input_wind_height=input_wind_height,
+                output_wind_height=output_wind_height,
+                diurnal_winds=diurnal_winds,
+                non_neutral_stability=non_neutral_stability,
+                air_temp=air_temp,
+                cloud_cover=cloud_cover,
+                year=year,
+                month=month,
+                day=day,
+                hour=hour,
+                time_zone=time_zone,
+            )
+            for i in range(len(speeds))
+        ]
 
     def run_all(self) -> list[SimulationResult]:
-        if self._n_runs == 0:
+        if not self._configs:
             raise RuntimeError("Call configure() before run_all()")
-        ok = self._army.startRuns(getattr(self, '_n_cpus', 2))
-        if not ok:
-            raise RuntimeError("startRuns() returned False")
-        results = []
-        for i in range(self._n_runs):
-            row = self._army.getOutputGridnRows(i)
-            col = self._army.getOutputGridnCols(i)
-            results.append(SimulationResult(
-                speed=self._army.getOutputSpeedGrid(i).copy(),
-                direction=self._army.getOutputDirectionGrid(i).copy(),
-                projection=self._army.getOutputGridProjection(i),
-                cell_size=self._army.getOutputGridCellSize(i),
-                xllcorner=self._army.getOutputGridxllCorner(i),
-                yllcorner=self._army.getOutputGridyllCorner(i),
-                ncols=col, nrows=row,
-                vel_filename="", ang_filename="",
-            ))
-        return results
+        session = NinjaSession()
+        return [session.simulate(cfg) for cfg in self._configs]

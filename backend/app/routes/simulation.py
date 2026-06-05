@@ -4,10 +4,10 @@ from pathlib import Path
 import numpy as np
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
-from backend.app.models.schemas import SimulationRequest, TimeseriesRequest
-from backend.app.core.task_manager import task_manager, TaskStatus
-from backend.app.core.ninja_bridge import SimulationConfig
-from backend.app.core.dem_cache import resolve_dem
+from app.models.schemas import SimulationRequest, TimeseriesRequest
+from app.core.task_manager import task_manager, TaskStatus
+from app.core.ninja_bridge import SimulationConfig
+from app.core.dem_cache import resolve_dem
 
 router = APIRouter(prefix="/simulate", tags=["simulation"])
 
@@ -18,7 +18,6 @@ async def create_simulation(req: SimulationRequest):
         raise HTTPException(400, f"Cannot resolve DEM: {req.dem_source} ({req.dem_type})")
 
     task_id = task_manager.create_task()
-    dt = req.datetime
     config = SimulationConfig(
         dem_path=str(dem_path),
         input_speed=req.input_speed,
@@ -30,12 +29,15 @@ async def create_simulation(req: SimulationRequest):
         number_cpus=req.number_cpus,
         output_speed_units=req.output_speed_units,
         diurnal_winds=req.diurnal_winds,
+        non_neutral_stability=req.non_neutral_stability,
         air_temp=req.air_temp,
         cloud_cover=req.cloud_cover,
-        year=int(dt[:4]) if dt else None,
-        month=int(dt[5:7]) if dt else None,
-        day=int(dt[8:10]) if dt else None,
-        hour=int(dt[11:13]) if dt else None,
+        year=req.year,
+        month=req.month,
+        day=req.day,
+        hour=req.hour,
+        minute=req.minute,
+        time_zone=req.time_zone,
     )
     task_manager.run_simulation(task_id, config)
     return {"task_id": task_id}
@@ -133,8 +135,6 @@ async def simulation_grid(task_id: str, index: int = Query(0, ge=0)):
 
 @router.post("/timeseries")
 async def create_timeseries(req: TimeseriesRequest):
-    if len(req.speeds) != len(req.directions):
-        raise HTTPException(400, "speeds and directions must have same length")
     dem_path = resolve_dem(req.dem_source, req.north, req.south, req.east, req.west, req.dem_type)
     if dem_path is None:
         raise HTTPException(400, f"Cannot resolve DEM: {req.dem_source} ({req.dem_type})")
@@ -144,5 +144,13 @@ async def create_timeseries(req: TimeseriesRequest):
         task_id, str(dem_path), req.speeds, req.directions,
         vegetation=req.vegetation, number_cpus=req.number_cpus,
         mesh_resolution=req.mesh_resolution,
+        input_wind_height=req.input_wind_height,
+        output_wind_height=req.output_wind_height,
+        diurnal_winds=req.diurnal_winds,
+        non_neutral_stability=req.non_neutral_stability,
+        air_temp=req.air_temp, cloud_cover=req.cloud_cover,
+        time_zone=req.time_zone,
+        year=req.year, month=req.month,
+        day=req.day, hour=req.hour,
     )
     return {"task_id": task_id}

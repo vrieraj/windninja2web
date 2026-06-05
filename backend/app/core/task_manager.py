@@ -1,11 +1,12 @@
+import os
 import uuid
 import logging
 import threading
 from enum import Enum
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
-from backend.app.core.ninja_bridge import NinjaSession, TimeSeriesSession, SimulationConfig, SimulationResult
-from backend.app.core.export import export_geotiff, export_geopackage, export_kmz, export_ascii_zip, export_pdf, export_vtk
+from app.core.ninja_bridge import NinjaSession, TimeSeriesSession, SimulationConfig, SimulationResult
+from app.core.export import export_geotiff, export_geopackage, export_kmz, export_ascii_zip, export_pdf, export_vtk
 
 logger = logging.getLogger(__name__)
 
@@ -62,13 +63,26 @@ class TaskManager:
 
     def run_timeseries(self, task_id: str, dem_path: str, speeds: list[float],
                        directions: list[float], vegetation: str = "grass",
-                       number_cpus: int = 2, mesh_resolution: float = 100.0):
+                       number_cpus: int = 2, mesh_resolution: float = 100.0,
+                       input_wind_height: float = 10.0,
+                       output_wind_height: float = 10.0,
+                       diurnal_winds: bool = False,
+                       non_neutral_stability: bool = False,
+                       air_temp: float = None, cloud_cover: float = None,
+                       time_zone: str = "UTC",
+                       year: int = None, month: int = None,
+                       day: int = None, hour: int = None):
         def _run():
             try:
                 self.update(task_id, TaskStatus.RUNNING, 0.1)
                 session = TimeSeriesSession()
                 session.configure(dem_path, speeds, directions, vegetation,
-                                  number_cpus, mesh_resolution)
+                                  number_cpus, mesh_resolution,
+                                  input_wind_height, output_wind_height,
+                                  diurnal_winds, non_neutral_stability,
+                                  air_temp, cloud_cover,
+                                  year=year, month=month, day=day, hour=hour,
+                                  time_zone=time_zone)
                 self.update(task_id, TaskStatus.RUNNING, 0.5)
                 results = session.run_all()
                 self.update(task_id, TaskStatus.COMPLETED, 1.0, result=results)
@@ -93,10 +107,11 @@ class TaskManager:
         if t is None or t["status"] != TaskStatus.COMPLETED:
             raise ValueError(f"Task {task_id} not completed")
         result = t["result"]
+        base, ext = os.path.splitext(output_path)
         if fmt == "geotiff":
             if isinstance(result, list):
                 for i, r in enumerate(result):
-                    export_geotiff(r, output_path.replace(f".{fmt}", f"_{i:04d}.tif"))
+                    export_geotiff(r, f"{base}_{i:04d}{ext}")
             else:
                 export_geotiff(result, output_path)
         elif fmt == "gpkg":
@@ -111,13 +126,13 @@ class TaskManager:
         elif fmt == "pdf":
             if isinstance(result, list):
                 for i, r in enumerate(result):
-                    export_pdf(r, output_path.replace(f".{fmt}", f"_{i:04d}.pdf"))
+                    export_pdf(r, f"{base}_{i:04d}{ext}")
             else:
                 export_pdf(result, output_path)
         elif fmt == "vtk":
             if isinstance(result, list):
                 for i, r in enumerate(result):
-                    export_vtk(r, output_path.replace(f".{fmt}", f"_{i:04d}.vtk"))
+                    export_vtk(r, f"{base}_{i:04d}{ext}")
             else:
                 export_vtk(result, output_path)
         else:

@@ -38,10 +38,11 @@ async def health():
 
 @app.get("/api/config")
 async def config():
-    return {"cesiumToken": os.getenv("CESIUM_TOKEN", "")}
+    return {}
 
 # Import and register route modules
-from backend.app.routes import simulation, dem, export
+from app.routes import simulation, dem, export, map as map_router
 app.include_router(simulation.router)
 app.include_router(dem.router)
 app.include_router(export.router)
+app.include_router(map_router.router)

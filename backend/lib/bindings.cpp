@@ -5,21 +5,26 @@
 #include "ninja.h"
 #include "ninjaArmy.h"
 #include "WindNinjaInputs.h"
-#include "OutputWriter.h"
+#include "ninja_init.h"
+
 #include "mesh.h"
 
 namespace py = pybind11;
 
 // ──────────────────────────────────────────────
 //  Helper: wrap double* as numpy array (no copy)
+//  Keeps a reference to `parent` to prevent the
+//  C++ object from being destroyed while the array
+//  is alive.
 // ──────────────────────────────────────────────
-py::array_t<double> as_numpy(const double* data, int rows, int cols)
+py::array_t<double> as_numpy(const double* data, int rows, int cols,
+                             py::object parent = py::none())
 {
     return py::array_t<double>(
         { (size_t)rows, (size_t)cols },
         { sizeof(double) * (size_t)cols, sizeof(double) },
         data,
-        py::cast<py::object>(py::none())
+        parent
     );
 }
 
@@ -46,9 +51,23 @@ void set_dem_from_numpy(ninja& self,
 // ──────────────────────────────────────────────
 PYBIND11_MODULE(windninja_core, m)
 {
+    GDALAllRegister();
+    OGRRegisterAll();
+
     m.doc() = "WindNinja simulation engine – C++ core with pybind11 bindings";
 
     // ── ninja class ───────────────────────────
+    // Module-level initialization
+    m.def("initialize", [](std::string gdal_data, std::string wn_data) {
+        return NinjaInitialize(gdal_data.c_str(), wn_data.c_str());
+    }, "Initialize WindNinja (GDAL data path, WindNinja data path)");
+
+    // Load timezone database directly without GDAL_DATA check
+    m.def("load_timezone_db", [](std::string csv_path) {
+        extern boost::local_time::tz_database globalTimeZoneDB;
+        globalTimeZoneDB.load_from_file(csv_path);
+    }, "Load Boost date_time timezone database from CSV path");
+
     py::class_<ninja>(m, "Ninja")
         .def(py::init<>())
 
@@ -71,7 +90,13 @@ PYBIND11_MODULE(windninja_core, m)
              py::overload_cast<WindNinjaInputs::eVegetation>(
                  &ninja::set_uniVegetation))
         .def("set_diurnalWinds", &ninja::set_diurnalWinds)
-        .def("set_date_time", &ninja::set_date_time)
+        .def("set_stabilityFlag", &ninja::set_stabilityFlag)
+        .def("set_alphaStability", &ninja::set_alphaStability)
+        .def("set_date_time",
+             py::overload_cast<int const &, int const &, int const &,
+                               int const &, int const &, int const &,
+                               std::string const &>(
+                 &ninja::set_date_time))
         .def("set_uniAirTemp", &ninja::set_uniAirTemp)
         .def("set_uniCloudCover", &ninja::set_uniCloudCover)
 
@@ -81,6 +106,7 @@ PYBIND11_MODULE(windninja_core, m)
                  &ninja::set_meshResolution))
         .def("set_meshResChoice",
              py::overload_cast<std::string>(&ninja::set_meshResChoice))
+        .def("set_numVertLayers", &ninja::set_numVertLayers)
         .def("set_numberCPUs", &ninja::set_numberCPUs)
 
         // Position
@@ -122,13 +148,15 @@ PYBIND11_MODULE(windninja_core, m)
              [](ninja& self) {
                  return as_numpy(self.get_outputSpeedGrid(),
                                  self.get_outputGridnRows(),
-                                 self.get_outputGridnCols());
+                                 self.get_outputGridnCols(),
+                                 py::cast(self));
              })
         .def("get_outputDirectionGrid",
              [](ninja& self) {
                  return as_numpy(self.get_outputDirectionGrid(),
                                  self.get_outputGridnRows(),
-                                 self.get_outputGridnCols());
+                                 self.get_outputGridnCols(),
+                                 py::cast(self));
              })
         .def("get_outputGridProjection", &ninja::get_outputGridProjection)
         .def("get_outputGridCellSize", &ninja::get_outputGridCellSize)
@@ -180,13 +208,15 @@ PYBIND11_MODULE(windninja_core, m)
              [](ninjaArmy& self, int nIndex) -> py::array_t<double> {
                  int rows = self.getOutputGridnRows(nIndex);
                  int cols = self.getOutputGridnCols(nIndex);
-                 return as_numpy(self.getOutputSpeedGrid(nIndex), rows, cols);
+                 return as_numpy(self.getOutputSpeedGrid(nIndex), rows, cols,
+                                 py::cast(self));
              })
         .def("getOutputDirectionGrid",
              [](ninjaArmy& self, int nIndex) -> py::array_t<double> {
                  int rows = self.getOutputGridnRows(nIndex);
                  int cols = self.getOutputGridnCols(nIndex);
-                 return as_numpy(self.getOutputDirectionGrid(nIndex), rows, cols);
+                 return as_numpy(self.getOutputDirectionGrid(nIndex), rows, cols,
+                                 py::cast(self));
              })
         .def("getOutputGridProjection",
              [](ninjaArmy& self, int nIndex) {
@@ -230,6 +260,10 @@ PYBIND11_MODULE(windninja_core, m)
                 std::string units) {
                  return self.setOutputWindHeight(nIndex, height, units);
              })
+        .def("setNumVertLayers",
+             [](ninjaArmy& self, int nIndex, int nLayers) {
+                 return self.setNumVertLayers(nIndex, nLayers);
+             })
         .def("setMeshResolution",
              [](ninjaArmy& self, int nIndex, double resolution,
                 std::string units) {
@@ -242,6 +276,14 @@ PYBIND11_MODULE(windninja_core, m)
         .def("setDiurnalWinds",
              [](ninjaArmy& self, int nIndex, bool flag) {
                  return self.setDiurnalWinds(nIndex, flag);
+             })
+        .def("setStabilityFlag",
+             [](ninjaArmy& self, int nIndex, bool flag) {
+                 return self.setStabilityFlag(nIndex, flag);
+             })
+        .def("setAlphaStability",
+             [](ninjaArmy& self, int nIndex, double stability_) {
+                 return self.setAlphaStability(nIndex, stability_);
              })
         .def("setUniAirTemp",
              [](ninjaArmy& self, int nIndex, double temp,
@@ -257,16 +299,6 @@ PYBIND11_MODULE(windninja_core, m)
              [](ninjaArmy& self, int nIndex, std::string path) {
                  return self.setOutputPath(nIndex, path);
              });
-
-    // ── OutputWriter ─────────────────────────
-    py::class_<OutputWriter>(m, "OutputWriter")
-        .def(py::init<>())
-        .def("setSpeedGrid", &OutputWriter::setSpeedGrid)
-        .def("setDirGrid", &OutputWriter::setDirGrid)
-        .def("setDEMfile", &OutputWriter::setDEMfile)
-        .def("setNinjaTime", &OutputWriter::setNinjaTime)
-        .def("write", &OutputWriter::write)
-        .def("finalizeWriteGtiff", &OutputWriter::finalizeWriteGtiff);
 
     // ══════════════════════════════════════════
     //  Enums

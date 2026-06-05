@@ -65,7 +65,7 @@ def test_core_import():
 def test_single_simulation():
     if not _has_core():
         pytest.skip("windninja_core not built yet")
-    from backend.app.core.ninja_bridge import NinjaSession, SimulationConfig
+    from app.core.ninja_bridge import NinjaSession, SimulationConfig
 
     config = SimulationConfig(
         dem_path=str(DEM),
@@ -92,7 +92,7 @@ def test_single_simulation():
 def test_timeseries():
     if not _has_core():
         pytest.skip("windninja_core not built yet")
-    from backend.app.core.ninja_bridge import TimeSeriesSession
+    from app.core.ninja_bridge import TimeSeriesSession
 
     n = 3
     speeds = [3.0, 5.0, 8.0]
@@ -112,7 +112,7 @@ def test_timeseries():
 # ── Export formats ────────────────────────────
 
 def _mock_result():
-    from backend.app.core.ninja_bridge import SimulationResult
+    from app.core.ninja_bridge import SimulationResult
     rng = np.random.default_rng(42)
     return SimulationResult(
         speed=rng.random((50, 60)).astype(np.float64) * 10,
@@ -126,74 +126,90 @@ def _mock_result():
 
 
 def test_export_geotiff():
-    from backend.app.core.export import export_geotiff
+    from app.core.export import export_geotiff
     from osgeo import gdal
     res = _mock_result()
     with tempfile.NamedTemporaryFile(suffix=".tif", delete=False) as f:
-        export_geotiff(res, f.name)
-        ds = gdal.Open(f.name)
-        assert ds is not None
-        assert ds.RasterCount == 2
-        assert ds.RasterXSize == 60
-        assert ds.RasterYSize == 50
-        ds = None
-        os.unlink(f.name)
+        try:
+            export_geotiff(res, f.name)
+            ds = gdal.Open(f.name)
+            assert ds is not None
+            assert ds.RasterCount == 2
+            assert ds.RasterXSize == 60
+            assert ds.RasterYSize == 50
+            ds = None
+        finally:
+            os.unlink(f.name)
 
 
 def test_export_geopackage():
-    from backend.app.core.export import export_geopackage
+    from app.core.export import export_geopackage
     from osgeo import ogr
     results = [_mock_result() for _ in range(3)]
     with tempfile.NamedTemporaryFile(suffix=".gpkg", delete=False) as f:
-        export_geopackage(results, f.name)
-        ds = ogr.Open(f.name)
+        path = f.name
+    try:
+        os.unlink(path)  # GPKG driver requires file to NOT exist
+        export_geopackage(results, path)
+        ds = ogr.Open(path)
         assert ds is not None
         assert ds.GetLayerCount() == 3
         ds = None
-        os.unlink(f.name)
+    finally:
+        if os.path.exists(path):
+            os.unlink(path)
 
 
 def test_export_kmz():
-    from backend.app.core.export import export_kmz
+    from app.core.export import export_kmz
     from zipfile import ZipFile
     results = [_mock_result() for _ in range(2)]
     with tempfile.NamedTemporaryFile(suffix=".kmz", delete=False) as f:
-        export_kmz(results, f.name)
-        with ZipFile(f.name) as z:
-            assert "doc.kml" in z.namelist()
-        os.unlink(f.name)
+        try:
+            export_kmz(results, f.name)
+            with ZipFile(f.name) as z:
+                assert "doc.kml" in z.namelist()
+        finally:
+            os.unlink(f.name)
 
 
 def test_export_ascii_zip():
-    from backend.app.core.export import export_ascii_zip
+    from app.core.export import export_ascii_zip
     from zipfile import ZipFile
     results = [_mock_result() for _ in range(2)]
     with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as f:
-        export_ascii_zip(results, f.name)
-        with ZipFile(f.name) as z:
-            names = z.namelist()
-            assert any("speed" in n for n in names)
-        os.unlink(f.name)
+        try:
+            export_ascii_zip(results, f.name)
+            with ZipFile(f.name) as z:
+                names = z.namelist()
+                assert any("speed" in n for n in names)
+        finally:
+            os.unlink(f.name)
 
 
 def test_export_pdf():
-    from backend.app.core.export import export_pdf
+    from app.core.export import export_pdf
     res = _mock_result()
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
-        export_pdf(res, f.name)
-        assert os.path.getsize(f.name) > 1000
-        os.unlink(f.name)
+        try:
+            export_pdf(res, f.name)
+            assert os.path.getsize(f.name) > 1000
+        finally:
+            os.unlink(f.name)
 
 
 def test_export_vtk():
-    from backend.app.core.export import export_vtk
+    from app.core.export import export_vtk
     res = _mock_result()
     with tempfile.NamedTemporaryFile(suffix=".vtk", delete=False) as f:
-        export_vtk(res, f.name)
-        content = open(f.name).read()
-        assert "DATASET STRUCTURED_POINTS" in content
-        assert "wind_speed" in content
-        os.unlink(f.name)
+        try:
+            export_vtk(res, f.name)
+            with open(f.name) as fh:
+                content = fh.read()
+            assert "DATASET STRUCTURED_POINTS" in content
+            assert "wind_speed" in content
+        finally:
+            os.unlink(f.name)
 
 
 
