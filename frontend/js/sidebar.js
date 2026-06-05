@@ -1,10 +1,7 @@
 const panels = [
-    { id: "dem-panel",     title: "Modelo Digital de Terreno"  },
-    { id: "meteo-panel",   title: "Condiciones Meteorológicas" },
-    { id: "surface-panel", title: "Superficie y Vegetación"    },
-    { id: "mesh-panel",    title: "Resolución de Malla"       },
-    { id: "diurnal-panel", title: "Vientos Diurnos"           },
-    { id: "export-panel",  title: "Exportar Resultados"       },
+    { id: "terrain-panel",  title: "Modelo Digital de Terreno" },
+    { id: "meteo-panel",    title: "Condiciones Meteorológicas" },
+    { id: "export-panel",   title: "Exportar Resultados" },
 ];
 
 function buildSidebar() {
@@ -38,97 +35,186 @@ function buildSidebar() {
     fillPanels();
 }
 
-function onTimeSlider(input) {
-    const idx = parseInt(input.value);
-    updateTimeSlider(idx, appState.timeCount);
-}
-
 function fillPanels() {
-    const dem = document.getElementById("dem-panel");
-    dem.innerHTML = `
-    <label>Seleccionar origen del DEM</label>
+    const terrain = document.getElementById("terrain-panel");
+    terrain.innerHTML = `
+    <label>Zona horaria</label>
+    <select id="timezone">
+      <option value="UTC">UTC</option>
+      <option value="US/Mountain">Mountain (US)</option>
+      <option value="US/Eastern">Eastern (US)</option>
+      <option value="US/Pacific">Pacific (US)</option>
+      <option value="Europe/Madrid">Europe/Madrid</option>
+      <option value="Europe/London">Europe/London</option>
+    </select>
+    <hr style="margin:6px 0;border-color:#313244;">
+    <label>Origen del DEM</label>
     <select id="dem-source">
-      <option value="alos">ALOS World 3D (30m) — recomendado</option>
       <option value="srtm">SRTM (30m)</option>
+      <option value="alos">ALOS AW3D30 (30m)</option>
       <option value="cop30">COP30 (30m)</option>
       <option value="upload">Subir archivo propio</option>
     </select>
-    <button class="btn btn-primary" onclick="toggleDraw()">Seleccionar área en el mapa</button>
-    <button class="btn" style="background:#585b70;color:#cdd6f4;margin-top:4px;" onclick="fetchDEM()">Descargar DEM</button>
+    <button class="btn btn-primary" onclick="toggleDraw()">Seleccionar área</button>
+    <button id="fetch-dem-btn" class="btn" style="background:#585b70;color:#cdd6f4;" onclick="fetchDEM()">Descargar DEM</button>
     <input type="file" id="file-upload-input" accept=".tif,.tiff,.asc,.bil"
            style="display:none" onchange="uploadDEM(this.files[0])">
-    <p id="bbox-info" style="font-size:0.8rem;margin-top:4px;">Ningún área seleccionada</p>
-  `;
-
-    const meteo = document.getElementById("meteo-panel");
-    meteo.innerHTML = `
-    <label>Velocidad del viento (m/s)</label>
-    <input type="number" id="wind-speed" value="5" min="0" step="0.5">
-    <label>Dirección (grados, desde N)</label>
-    <input type="range" id="wind-dir" min="0" max="360" value="270">
-    <span id="wind-dir-label">270° (W)</span>
-    <label>Altura del viento (m)</label>
-    <input type="number" id="wind-height" value="10" min="0" step="1">
-  `;
-    document.getElementById("wind-dir").addEventListener("input", function () {
-        document.getElementById("wind-dir-label").textContent = `${this.value}°`;
-    });
-
-    const surface = document.getElementById("surface-panel");
-    surface.innerHTML = `
+    <p id="bbox-info" style="font-size:0.75rem;margin-top:3px;">Ningún área seleccionada</p>
+    <hr style="margin:6px 0;border-color:#313244;">
+    <label>Importar GeoJSON</label>
+    <button class="btn" style="background:#585b70;color:#cdd6f4;" onclick="document.getElementById('geojson-file-input').click()">Importar GeoJSON</button>
+    <button class="btn-sm" onclick="clearGeoJSON();alert('GeoJSON eliminado')" style="margin-top:3px;">Limpiar</button>
+    <hr style="margin:6px 0;border-color:#313244;">
     <label>Vegetación</label>
     <select id="vegetation">
       <option value="grass">Hierba</option>
       <option value="brush">Matorral</option>
       <option value="trees">Árboles</option>
     </select>
-  `;
-
-    const mesh = document.getElementById("mesh-panel");
-    mesh.innerHTML = `
     <label>Resolución de malla (m)</label>
     <input type="number" id="mesh-res" value="100" min="10" step="10">
-    <label>Cantidad de simulaciones (time series)</label>
-    <input type="number" id="ts-count" value="8" min="2" max="30" step="1">
   `;
 
-    const diurnal = document.getElementById("diurnal-panel");
-    diurnal.innerHTML = `
-    <label><input type="checkbox" id="diurnal-toggle"> Vientos diurnos</label>
-    <label>Temperatura (°C)</label>
-    <input type="number" id="air-temp" value="25">
-    <label>Cobertura nubosa (%)</label>
-    <input type="range" id="cloud-cover" min="0" max="100" value="0">
-    <label>Fecha y hora</label>
-    <input type="datetime-local" id="sim-datetime">
+    const meteo = document.getElementById("meteo-panel");
+    meteo.innerHTML = `
+    <label>Altura del viento (m)</label>
+    <input type="number" id="wind-height" value="10" min="0" step="1">
+    <hr style="margin:6px 0;border-color:#313244;">
+    <table class="sheet-table" id="hourly-table">
+      <thead>
+        <tr>
+          <th style="width:36px;">Hora</th>
+          <th style="width:44px;">Viento</th>
+          <th style="width:54px;">Dir.°</th>
+          <th style="width:80px;">Fecha</th>
+          <th style="width:24px;">Nub</th>
+          <th style="width:28px;">°C</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div style="display:flex;gap:4px;">
+      <button class="btn-sm" onclick="addHourRow()">+ fila</button>
+      <button class="btn-sm" onclick="removeHourRow()">− fila</button>
+    </div>
+    <hr style="margin:8px 0;border-color:#313244;">
+    <label><input type="checkbox" id="diurnal-toggle" onchange="toggleDiurnal()"> Vientos diurnos</label>
+    <label><input type="checkbox" id="stability-toggle" onchange="toggleStability()"> Estabilidad atmosférica</label>
   `;
+    for (let h = 0; h < 4; h++) {
+        addHourRow(8 + h * 4, 5, 270);
+    }
 
     const exportP = document.getElementById("export-panel");
     exportP.innerHTML = `
-    <button class="btn btn-success" onclick="runSimulation()">▶ Simular</button>
-    <button class="btn" style="background:#f9e2af;color:#1e1e2e;margin-top:4px;" onclick="runTimeSeries()">▶ Simular Time Series</button>
-    <div id="progress-bar" style="display:none;margin-top:8px;">
-      <div style="height:6px;background:#45475a;border-radius:3px;">
-        <div id="progress-fill" style="height:100%;width:0%;background:#89b4fa;border-radius:3px;transition:width 0.3s;"></div>
+    <button id="sim-btn" class="btn btn-success" onclick="runSimulation()">▶ Simular</button>
+    <div id="progress-bar" style="display:none;margin-top:6px;">
+      <div style="height:4px;background:#45475a;border-radius:2px;">
+        <div id="progress-fill" style="height:100%;width:0%;background:#89b4fa;border-radius:2px;transition:width 0.3s;"></div>
       </div>
     </div>
-    <div id="time-slider-container" style="display:none;margin-top:8px;">
-      <label id="time-label">Paso 1 / 1</label>
+    <div id="status-msg" class="status-msg" style="display:none;margin-top:4px;"></div>
+    <div id="time-slider-container" style="display:none;margin-top:6px;">
+      <label id="time-label" style="font-size:0.75rem;">Paso 1 / 1</label>
       <input type="range" id="time-slider" min="0" max="0" value="0"
              oninput="onTimeSlider(this)" style="width:100%;">
     </div>
-    <hr style="margin:12px 0;border-color:#313244;">
+    <hr style="margin:10px 0;border-color:#313244;">
     <label>Exportar</label>
     <select id="export-format">
       <option value="geotiff">GeoTIFF</option>
       <option value="gpkg">GeoPackage</option>
-      <option value="kmz">KMZ (multi-capa)</option>
+      <option value="kmz">KMZ</option>
       <option value="ascii-zip">ASCII (ZIP)</option>
       <option value="pdf">PDF</option>
       <option value="vtk">VTK</option>
     </select>
     <button class="btn" id="export-btn" disabled style="background:#585b70;color:#cdd6f4;" onclick="exportResult()">Exportar</button>
   `;
+}
+
+function toggleDiurnal() {
+    updateDialOpts();
+}
+
+function toggleStability() {
+    updateDialOpts();
+}
+
+function updateDialOpts() {
+    const diurnal = document.getElementById("diurnal-toggle").checked;
+    const stability = document.getElementById("stability-toggle").checked;
+    const enabled = diurnal || stability;
+    const rows = document.querySelectorAll("#hourly-table tbody tr");
+    rows.forEach((r) => {
+        const inputs = r.querySelectorAll("input");
+        if (inputs.length >= 6) {
+            inputs[3].disabled = !enabled; // date
+            inputs[4].disabled = !enabled; // cloud
+            inputs[5].disabled = !enabled; // temp
+        }
+    });
+}
+
+function addHourRow(hour, speed, dir) {
+    if (hour === undefined) {
+        const rows = document.querySelectorAll("#hourly-table tbody tr");
+        const last = rows[rows.length - 1];
+        hour = last ? parseInt(last.dataset.hour) + 1 : 0;
+        speed = 5;
+        dir = 270;
+    }
+    const enabled = document.getElementById("diurnal-toggle").checked ||
+                    document.getElementById("stability-toggle").checked;
+    const today = new Date().toISOString().slice(0, 10);
+    const tr = document.createElement("tr");
+    tr.dataset.hour = hour;
+    tr.innerHTML = `
+    <td><input type="number" value="${hour}" min="0" max="23" step="1" onchange="this.closest('tr').dataset.hour=this.value"></td>
+    <td><input type="number" value="${speed}" min="0" step="0.5"></td>
+    <td>
+      <div class="dir-cell">
+        <input type="number" value="${dir}" min="0" max="360" step="1" oninput="updateArrow(this)">
+        <span class="dir-arrow">↑</span>
+      </div>
+    </td>
+    <td><input type="date" value="${today}" ${enabled ? "" : "disabled"}></td>
+    <td><input type="number" min="0" max="100" value="0" ${enabled ? "" : "disabled"}></td>
+    <td><input type="number" value="25" min="-40" max="200" step="1" ${enabled ? "" : "disabled"}></td>
+  `;
+    document.querySelector("#hourly-table tbody").appendChild(tr);
+    updateArrow(tr.querySelector(".dir-cell input[type=number]"));
+    appState.timeCount = document.querySelectorAll("#hourly-table tbody tr").length;
+}
+
+function removeHourRow() {
+    const rows = document.querySelectorAll("#hourly-table tbody tr");
+    if (rows.length <= 1) return;
+    rows[rows.length - 1].remove();
+    appState.timeCount = document.querySelectorAll("#hourly-table tbody tr").length;
+}
+
+function updateArrow(input) {
+    const deg = parseFloat(input.value) || 0;
+    const span = input?.closest("td")?.querySelector(".dir-arrow");
+    if (!span) return;
+    span.textContent = "↑";
+    span.style.transform = `rotate(${(deg + 180) % 360}deg)`;
+    span.style.display = "inline-block";
+}
+
+function getHourlyData() {
+    const rows = document.querySelectorAll("#hourly-table tbody tr");
+    const speeds = [], directions = [], dates = [], clouds = [], temps = [];
+    rows.forEach((r) => {
+        const inputs = r.querySelectorAll("input");
+        speeds.push(parseFloat(inputs[1].value) || 0);
+        directions.push(parseFloat(inputs[2].value) || 0);
+        dates.push(inputs[3].value || "");    // date
+        clouds.push(parseInt(inputs[4].value) || 0);  // cloud
+        temps.push(parseFloat(inputs[5].value) || 0); // temp
+    });
+    return { speeds, directions, dates, clouds, temps, count: speeds.length };
 }
 
 document.addEventListener("DOMContentLoaded", buildSidebar);
