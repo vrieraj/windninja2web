@@ -1,9 +1,10 @@
 import os
 import tempfile
+import zipfile
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from fastapi import BackgroundTasks
-from backend.app.core.task_manager import task_manager, TaskStatus
+from app.core.task_manager import task_manager, TaskStatus
 
 router = APIRouter(prefix="/export", tags=["export"])
 
@@ -24,6 +25,9 @@ EXT_MAP = {
     "pdf": ".pdf",
     "vtk": ".vtk",
 }
+
+# Formats that produce one file per simulation (timeseries -> zip of N files)
+MULTI_FILE_FORMATS = {"geotiff", "pdf", "vtk"}
 
 def _cleanup(path: str):
     try:
@@ -47,6 +51,32 @@ async def export_simulation(task_id: str, fmt: str, bg: BackgroundTasks):
 
     try:
         task_manager.export(task_id, fmt, output_path)
+
+        is_multi = isinstance(t.get("result"), list) and fmt in MULTI_FILE_FORMATS
+
+        if is_multi:
+            base, _ = os.path.splitext(output_path)
+            to_clean = []
+            zip_path = output_path + ".zip"
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+                i = 0
+                while True:
+                    p = f"{base}_{i:04d}{ext}"
+                    if os.path.exists(p):
+                        z.write(p, os.path.basename(p))
+                        to_clean.append(p)
+                        i += 1
+                    else:
+                        break
+            to_clean.extend([output_path, zip_path])
+            for p in to_clean:
+                bg.add_task(_cleanup, p)
+            return FileResponse(
+                zip_path,
+                media_type="application/zip",
+                filename=f"windninja_{task_id[:8]}.zip",
+            )
+
         bg.add_task(_cleanup, output_path)
         return FileResponse(
             output_path,

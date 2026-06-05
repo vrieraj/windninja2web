@@ -161,7 +161,7 @@ Esto nos permite generar N simulaciones y animarlas con un slider.
 ### Fase 5 — Producción ✅
 - [x] Ajustes HF Spaces: Dockerfile multietapa, .dockerignore, deploy-hf.yml
 - [x] CORS middleware configurado
-- [x] GDAL version pinned a 3.4.1
+- [x] GDAL version pinned a 3.13.0 (actualizado de 3.4.1 para compatibilidad con sistema Arch Linux)
 - [x] Temp file cleanup con BackgroundTasks
 - [x] .env excluido del build (token va como Secret de HF)
 - [x] Documentación completa en AGENTS.md (arquitectura, decisiones, auditorías)
@@ -188,10 +188,10 @@ Cada fase incluye una auditoría post-entrega. Los hallazgos se registran aquí.
 8. `.github/workflows/deploy-hf.yml:26-28` — Push a ghcr.io en vez de registry.huggingface.co. Corregido.
 9. `backend/app/core/ninja_bridge.py:14-16` — `simulate()` era no-op. Pendiente para Fase 1.
 
-**Menores (documentados):**
-10. `frontend/js/viewer.js:1` — Token Cesium Ion vacío. Añadir registro gratuito para terreno de alta resolución.
-11. `backend/app/models/schemas.py:24-25` — Validación de longitudes de listas en TimeseriesRequest pendiente.
-12. `backend/app/models/schemas.py:31` — `fmt` debería ser `Literal` en vez de `str`.
+**Menores (corregidos):**
+10. `frontend/js/viewer.js:1` — Token Cesium Ion vacío. Pendiente de añadir en HF Secrets.
+11. `backend/app/models/schemas.py:24-25` — Añadido `model_validator` para validar que `speeds` y `directions` tengan igual longitud.
+12. `backend/app/models/schemas.py:31` — `fmt` ya usa `Literal`.
 
 ### Fase 1 — Hallazgos de Auditoría
 
@@ -213,12 +213,12 @@ Cada fase incluye una auditoría post-entrega. Los hallazgos se registran aquí.
 **Menores (corregidos):**
 12. `backend/app/core/export.py:122-137` — PDF no mostraba coordenadas reales ni dirección. Añadido `extent` real y flechas `quiver`.
 13. `backend/app/core/export.py:154-161` — VTK solo tenía `SCALARS`, añadido campo `VECTORS wind_vector` con componentes u/v.
-14. `tests/test_simulation.py:138,151,162,174,183,194` — Archivos temporales no limpiados si test falla (sin try/finally). Documentado como mejora futura.
+14. `tests/test_simulation.py:138,151,162,174,183,194` — Archivos temporales envueltos en `try/finally` para garantizar cleanup aunque falle el test.
 
-**Pendientes para Fase 2:**
-15. `backend/lib/bindings.cpp:16-24` — `as_numpy` no preserva referencia al objeto C++ dueño del buffer. Mitigado por `.copy()` en `ninja_bridge.py`. Para mejorar: pasar `py::object self` como parent del array.
-16. `backend/lib/bindings.cpp:200-208` — Bindings de `OutputWriter` requieren `AsciiGrid<double>`, no invocables desde Python. Son vestigiales (export.py usa GDAL puro). Considerar eliminar o convertir a wrappers numpy.
-17. `backend/app/models/schemas.py:31` — `fmt` debería ser `Literal` en vez de `str`.
+**Corregidos en Fase 2:**
+15. `backend/lib/bindings.cpp:16-24` — `as_numpy` ahora recibe `py::object parent` (default `py::none()`). Los callers pasan `py::cast(self)` para que el array numpy retenga una referencia al objeto C++ dueño del buffer.
+16. `backend/lib/bindings.cpp:261-269` — Bindings de `OutputWriter` eliminados. Eran vestigiales (export.py usa GDAL puro) y requerían `AsciiGrid<double>` no expuesto a Python.
+17. `backend/app/models/schemas.py:31` — `fmt` ya usa `Literal`.
 
 ### Fase 5 — Hallazgos de Auditoría (Pre-Deploy)
 
@@ -346,6 +346,47 @@ Prioridad alta (esencial para MVP):
 ---
 
 ## 9. Notas Técnicas
+
+### Fase 6 — End-to-End Testing (Jun 2026)
+
+**Estado actual: 11/11 tests PASS, backend funcional en puerto 8000.**
+
+#### Backend verificado
+
+| Endpoint | Estado | Notas |
+|----------|--------|-------|
+| `GET /health` | ✅ | `{"status":"ok"}` |
+| `GET /api/config` | ✅ | Devuelve Cesium token |
+| `GET /` | ✅ | Sirve index.html |
+| `GET /static/*` | ✅ | Sirve JS/CSS/HTML |
+| `POST /simulate/` | ✅ | Tarea asíncrona → task_id |
+| `GET /simulate/status/{id}` | ✅ | Progreso + estados |
+| `GET /simulate/result/{id}` | ✅ | Metadatos + type single/timeseries |
+| `GET /simulate/grid/{id}` | ✅ | GeoJSON sampleado, ~1054 features |
+| `POST /simulate/timeseries` | ✅ | 3 runs en ~6s |
+| `GET /export/{id}/geotiff` | ✅ | 2-band GeoTIFF con datos válidos |
+| `GET /export/{id}/gpkg` | ✅ | GeoPackage multi-capa |
+| `GET /export/{id}/kmz` | ✅ | KML empaquetado en ZIP |
+| `GET /export/{id}/ascii-zip` | ✅ | ASCII grids en ZIP |
+| `GET /export/{id}/pdf` | ✅ | Mapa con quiver |
+| `GET /export/{id}/vtk` | ✅ | VTK con vectores |
+| `GET /dem/available` | ✅ | 10 DEMs listados |
+
+#### Bugs corregidos en esta fase
+
+1. **`from backend.app` imports rotos** (`backend/main.py:44` y 17 lugares más). El módulo `backend` no era un paquete importable. Creado `backend/__init__.py` + cambiados todos los imports a `from app.xxx`.
+
+2. **`export_geopackage` devuelve 500** (`export.py:47`). `drv.Create("GPKG", output_path, ...)` falla si el archivo ya existe (GPKG no sobreescribe). Solución: `os.unlink(output_path)` antes de `drv.Create`.
+
+3. **Timeseries GeoTIFF export sobrescribe archivos** (`task_manager.py:99`). `output_path.replace(".geotiff", "_0000.tif")` no coincidía porque `output_path` termina en `.tif`. Solución: `os.path.splitext` + formateo correcto.
+
+4. **Timeseries per-file formats devuelven solo el último** (`routes/export.py`). Para formatos que producen N archivos (geotiff, pdf, vtk) con timeseries, ahora se empaquetan en ZIP.
+
+#### Próximos pasos
+- Probar frontend en navegador real (Cesium.js + sidebar + simular + exportar)
+- Probar DEM fetch desde OpenTopography API
+- Configurar deploy a Hugging Face Spaces (Docker multietapa)
+- Ejecutar lint/typecheck
 
 - **OpenMP**: WindNinja usa multithreading. En Hugging Face Spaces con CPU limitada, configurar `set_numberCPUs(1)` o `2`.
 - **GDAL**: Necesario en runtime para DEM I/O y output formats. Ya incluido en la cadena de dependencias.

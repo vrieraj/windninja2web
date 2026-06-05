@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Literal
 
 class SimulationRequest(BaseModel):
@@ -14,12 +14,18 @@ class SimulationRequest(BaseModel):
     output_wind_height: float = 10.0
     vegetation: str = "grass"
     diurnal_winds: bool = False
+    non_neutral_stability: bool = False
     mesh_resolution: float = 100.0
     output_speed_units: Literal["mps", "mph", "kph", "kts"] = "mps"
     number_cpus: int = 2
     air_temp: Optional[float] = None
     cloud_cover: Optional[float] = None
-    datetime: Optional[str] = None
+    year: Optional[int] = None
+    month: Optional[int] = None
+    day: Optional[int] = None
+    hour: Optional[int] = None
+    minute: int = 0
+    time_zone: str = "UTC"
 
 class TimeseriesRequest(BaseModel):
     dem_source: str
@@ -36,8 +42,20 @@ class TimeseriesRequest(BaseModel):
     output_wind_height: float = 10.0
     number_cpus: int = 2
     diurnal_winds: bool = False
+    non_neutral_stability: bool = False
     air_temp: Optional[float] = None
     cloud_cover: Optional[float] = None
+    year: Optional[int] = None
+    month: Optional[int] = None
+    day: Optional[int] = None
+    hour: Optional[int] = None
+    time_zone: str = "UTC"
+
+    @model_validator(mode="after")
+    def _speeds_dirs_match(self):
+        if len(self.speeds) != len(self.directions):
+            raise ValueError("speeds and directions must have the same length")
+        return self
 
 class ExportRequest(BaseModel):
     fmt: Literal["geotiff", "gpkg", "kmz", "ascii-zip", "pdf", "vtk"]

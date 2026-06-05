@@ -21,7 +21,7 @@ find_package(shapelib CONFIG QUIET)
 if(NOT shapelib_FOUND)
     find_package(PkgConfig QUIET)
     if(PkgConfig_FOUND)
-        pkg_check_modules(SHAPELIB IMPORTED_TARGET shp)
+        pkg_check_modules(SHAPELIB IMPORTED_TARGET shapelib)
         if(SHAPELIB_FOUND)
             add_library(shapelib_interface ALIAS PkgConfig::SHAPELIB)
             set(SHAPELIB_LIBRARY PkgConfig::SHAPELIB)
@@ -31,6 +31,10 @@ if(NOT shapelib_FOUND)
 endif()
 
 find_package(netCDF QUIET)
+if(netCDF_FOUND)
+    # netCDFConfig.cmake sets netCDF_LIBRARIES (not NETCDF_LIBRARIES_C)
+    set(NETCDF_LIBRARIES_C ${netCDF_LIBRARIES})
+endif()
 
 # ------- Source tree -------
 set(NINJA_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../src/ninja")
@@ -88,6 +92,11 @@ set(NINJA_SOURCES
     wxModelInitialization.cpp wxModelInitializationFactory.cpp
     wxStation.cpp             windninja.cpp
     gcp_wx_init.cpp           ninjaTools.cpp
+    foamGriddedInitialization.cpp
+    foamDomainAverageInitialization.cpp
+    foamWxModelInitialization.cpp
+    ninjafoam.cpp
+    nomads_wx_init.cpp
 )
 list(TRANSFORM NINJA_SOURCES PREPEND "${NINJA_SRC_DIR}/")
 
@@ -103,13 +112,8 @@ endif()
 # Compile definitions matching the main WindNinja build
 add_compile_definitions(
     $<$<BOOL:${OpenMP_FOUND}>:NINJA_OPENMP>
-    NINJAFOAM=0
-    WITH_NOMADS_SUPPORT=0
-    PHONE_HOME_QUERIES_ENABLED=0
-    HAVE_GMTED=0
-    WITH_LCP_CLIENT=0
-    FRICTION_VELOCITY=0
-    EMISSIONS=0
+    NINJAFOAM
+    C_API
 )
 
 # ------- pybind11 module -------

@@ -1,3 +1,4 @@
+import os
 import hashlib
 import logging
 import math
@@ -49,13 +50,16 @@ def resolve_dem(source: str, north: float = None, south: float = None,
         cached = dem_cache.get_cached_path(north, south, east, west, dem_type)
         if cached:
             logger.info("Using cached DEM: %s", cached)
-            return cached
-        return _fetch_dem(north, south, east, west, dem_type)
+            return _reproject_to_utm(cached)
+        path = _fetch_dem(north, south, east, west, dem_type)
+        if path is None:
+            return None
+        return _reproject_to_utm(path)
     path = Path(source)
     if not path.is_absolute():
         path = DATA_DIR / path
     if path.exists():
-        return path
+        return _reproject_to_utm(path)
     return None
 
 def _fetch_dem(north: float, south: float, east: float, west: float,
@@ -69,15 +73,18 @@ def _fetch_dem(north: float, south: float, east: float, west: float,
     return None
 
 def _fetch_opentopography(north, south, east, west, dem_type):
-    dem_map = {"srtm": "SRTM", "alos": "AW3D30", "cop30": "COP30"}
+    dem_map = {"srtm": "SRTMGL1", "alos": "AW3D30", "cop30": "COP30"}
     dem_param = dem_map.get(dem_type, "SRTM")
+    api_key = os.environ.get("OPENTOPOGRAPHY_API_KEY", "")
+    if not api_key:
+        logger.warning("OPENTOPOGRAPHY_API_KEY not set; try AWS terrain tiles fallback")
+        return None
     try:
         import requests
-        api_key = ""
         url = (
-            f"https://portal.opentopography.org/API/globaldem?dem={dem_param}&"
+            f"https://portal.opentopography.org/API/globaldem?demtype={dem_param}&"
             f"south={south}&north={north}&west={west}&east={east}&"
-            f"output=GTiff&api_key={api_key}"
+            f"outputFormat=GTiff&API_Key={api_key}"
         )
         logger.info("Fetching DEM from OpenTopography: %s", url[:120])
         resp = requests.get(url, timeout=180)
@@ -188,6 +195,76 @@ def _merge_tiles(tile_paths: list[Path], north, south, east, west) -> Path | Non
             return tile_paths[0]
         return None
 
+def _reproject_to_utm(dem_path: Path) -> Path:
+    if dem_path.stem.endswith("_utm"):
+        logger.debug("DEM already in UTM: %s", dem_path)
+        return dem_path
+
+    from osgeo import gdal, osr
+
+    ds = gdal.Open(str(dem_path))
+    if ds is None:
+        logger.warning("Cannot open %s for UTM reprojection", dem_path)
+        return dem_path
+
+    src_srs = osr.SpatialReference()
+    projection_wkt = ds.GetProjection()
+    if projection_wkt:
+        src_srs.ImportFromWkt(projection_wkt)
+    else:
+        src_srs.ImportFromEPSG(4326)
+
+    if src_srs.IsProjected():
+        ds = None
+        logger.debug("DEM already projected: %s", dem_path)
+        return dem_path
+
+    gt = ds.GetGeoTransform()
+    ncols = ds.RasterXSize
+    nrows = ds.RasterYSize
+
+    centroid_lon = gt[0] + (ncols * gt[1]) / 2.0
+    centroid_lat = gt[3] + (nrows * gt[5]) / 2.0
+
+    if src_srs.IsGeographic():
+        geog_name = src_srs.GetAttrValue("GEOGCS")
+        if geog_name and "WGS 84" not in geog_name:
+            t_srs = osr.SpatialReference()
+            t_srs.ImportFromEPSG(4326)
+            tx = osr.CoordinateTransformation(src_srs, t_srs)
+            pt = tx.TransformPoint(centroid_lon, centroid_lat)
+            centroid_lon, centroid_lat = pt[0], pt[1]
+
+    utm_zone = int(math.floor((centroid_lon + 180) / 6)) + 1
+    epsg_code = 32600 + utm_zone if centroid_lat >= 0 else 32700 + utm_zone
+
+    utm_path = dem_path.with_name(dem_path.stem + "_utm.tif")
+
+    if utm_path.exists():
+        ds = None
+        logger.info("Using cached UTM DEM: %s", utm_path)
+        return utm_path
+
+    logger.info("Reprojecting DEM to UTM zone %d (EPSG:%d)...", utm_zone, epsg_code)
+
+    gdal.Warp(
+        str(utm_path),
+        ds,
+        dstSRS=f"EPSG:{epsg_code}",
+        resampleAlg="cubic",
+        format="GTiff",
+    )
+
+    ds = None
+
+    if _is_valid_geotiff(utm_path):
+        logger.info("UTM reprojected DEM saved to %s", utm_path)
+        return utm_path
+
+    logger.warning("UTM reprojection failed, returning original DEM")
+    return dem_path
+
+
 def _crop_to_bbox(src: Path, dst: Path, north, south, east, west) -> bool:
     try:
         from osgeo import gdal
@@ -196,3 +273,74 @@ def _crop_to_bbox(src: Path, dst: Path, north, south, east, west) -> bool:
         return _is_valid_geotiff(dst)
     except Exception:
         return False
+
+
+def generate_preview_png(north: float, south: float, east: float, west: float,
+                         dem_type: str = "srtm", max_dim: int = 1024) -> Path | None:
+    """Generate a color-relief PNG from the cached WGS84 DEM for the given bbox."""
+    cached = dem_cache.get_cached_path(north, south, east, west, dem_type)
+    if cached is None:
+        return None
+
+    preview_path = cached.with_name(cached.stem + "_preview.png")
+    if preview_path.exists():
+        return preview_path
+
+    from osgeo import gdal
+    import uuid as uuid_mod
+
+    tmp_tif = DEM_CACHE_DIR / f"_cropped_{uuid_mod.uuid4().hex[:8]}.tif"
+    try:
+        if not _crop_to_bbox(cached, tmp_tif, north, south, east, west):
+            return None
+
+        # Downsample if too large
+        ds = gdal.Open(str(tmp_tif))
+        if ds is None:
+            return None
+        w, h = ds.RasterXSize, ds.RasterYSize
+        ds = None
+
+        scale = min(1.0, max_dim / w, max_dim / h)
+        if scale < 1.0:
+            resized = DEM_CACHE_DIR / f"_resized_{uuid_mod.uuid4().hex[:8]}.tif"
+            gdal.Warp(str(resized), str(tmp_tif),
+                      width=int(w * scale), height=int(h * scale),
+                      resampleAlg="bilinear", format="GTiff")
+            tmp_tif.unlink(missing_ok=True)
+            tmp_tif = resized
+
+        # Write a color-ramp file
+        ramp_lines = [
+            "-500  68   1  84",
+            "   0  59  82 139",
+            " 200  33 145 140",
+            " 500  94 201  98",
+            "1000 197 231  87",
+            "1500 253 231  37",
+            "2000 245 130  28",
+            "3000 252  78  42",
+            "4000 180  40  30",
+            "6000 255 255 255",
+            "   nv   0   0   0",
+        ]
+        ramp_path = DEM_CACHE_DIR / f"_ramp_{uuid_mod.uuid4().hex[:8]}.txt"
+        ramp_path.write_text("\n".join(ramp_lines))
+
+        gdal.DEMProcessing(str(preview_path), str(tmp_tif),
+                           "color-relief", colorFilename=str(ramp_path),
+                           format="PNG")
+
+        ramp_path.unlink(missing_ok=True)
+        tmp_tif.unlink(missing_ok=True)
+
+        if preview_path.exists() and preview_path.stat().st_size > 200:
+            return preview_path
+        return None
+    except Exception as exc:
+        logger.warning("generate_preview_png failed: %s", exc)
+        try:
+            tmp_tif.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return None

@@ -8,7 +8,7 @@ import zipfile
 import numpy as np
 from osgeo import gdal, osr, ogr
 
-from backend.app.core.ninja_bridge import SimulationResult
+from app.core.ninja_bridge import SimulationResult
 
 
 def _get_units_label(units: str = "mps") -> str:
@@ -40,6 +40,8 @@ def export_geotiff(result: SimulationResult, output_path: str,
 def export_geopackage(results: list[SimulationResult], output_path: str,
                       speed_units: str = "mps"):
     """Write all simulation time steps as layers in a single GeoPackage."""
+    if os.path.exists(output_path):
+        os.unlink(output_path)
     drv = gdal.GetDriverByName("GPKG")
     ds = drv.Create(output_path, 0, 0, 0, gdal.GDT_Unknown)
     for idx, res in enumerate(results):
