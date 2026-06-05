@@ -138,6 +138,11 @@ async function runSimulation() {
                 const grid = await apiGet(`/simulate/grid/${resp.task_id}`);
                 appState.windData = [grid];
                 appState.timeCount = 1;
+                const spds = grid.features.map(f => f.properties.speed || 0);
+                const mx = Math.max(...spds);
+                const sorted = [...spds].sort((a, b) => a - b);
+                const p50 = sorted[Math.floor(sorted.length * 0.5)];
+                window.updateColorScale(p50 * 3.6, mx * 3.6);
                 window.addWindArrows(grid, 0);
                 document.getElementById("export-btn").disabled = false;
                 setStatus("Simulación completada", "success");
@@ -179,9 +184,18 @@ async function runSimulation() {
                 appState.windData = grids;
                 appState.timeCount = hd.count;
                 appState.timeIndex = 0;
+                appState.timeLabels = hd.dates.map((d, i) => {
+                    const h = String(hd.hours[i] || 0).padStart(2, '0');
+                    return d ? `${d} ${h}:00` : `Hora ${h}:00`;
+                });
+                const allSpd = grids.flatMap(g => g.features.map(f => f.properties.speed || 0));
+                const mx = Math.max(...allSpd);
+                const sorted = [...allSpd].sort((a, b) => a - b);
+                const p50 = sorted[Math.floor(sorted.length * 0.5)];
+                window.updateColorScale(p50 * 3.6, mx * 3.6);
                 window.addWindArrows(grids[0], 0);
                 document.getElementById("time-slider-container").style.display = "block";
-                document.getElementById("time-label").textContent = `Paso 1 / ${hd.count}`;
+                document.getElementById("time-label").textContent = appState.timeLabels[0];
                 document.getElementById("time-slider").max = hd.count - 1;
                 document.getElementById("time-slider").value = 0;
                 document.getElementById("export-btn").disabled = false;

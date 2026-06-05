@@ -6,7 +6,7 @@
     <title>WindNinja Web</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
-    <link rel="stylesheet" href="/static/css/style.css?v=12">
+    <link rel="stylesheet" href="/static/css/style.css?v=28">
 </head>
 <body>
     <div id="app">
@@ -14,15 +14,39 @@
             <h2>WindNinja</h2>
             <div id="meteo-panels"></div>
             <div id="export-controls"></div>
+            <div id="sidebar-footer">
+                <a href="https://github.com/vrieraj/windninja2web" target="_blank" rel="noopener">GitHub</a>
+                <a href="https://ninjastorm.firelab.org/windninja/" target="_blank" rel="noopener">WindNinja</a>
+            </div>
         </div>
         <div id="viewer">
             <div id="viewer-2d"></div>
             <div id="viewer-3d" style="display:none;position:relative;width:100%;height:100%;">
-                <div id="viewer-3d-controls" style="position:absolute;top:10px;left:10px;z-index:1000;display:flex;gap:4px;">
+                <div id="viewer-3d-controls" style="position:absolute;top:10px;right:10px;z-index:1000;display:flex;gap:4px;">
                     <button class="leaflet-btn" onclick="window.show2DView()">← Mapa 2D</button>
                     <button class="leaflet-btn" onclick="window.changeLayer('satellite')">Satélite</button>
                     <button class="leaflet-btn" onclick="window.changeLayer('standard')">Estándar</button>
                     <button class="leaflet-btn" onclick="window.changeLayer('hybrid')">Híbrido</button>
+                </div>
+                <svg id="compass-arrow" viewBox="0 0 24 24" width="36" height="36">
+                    <defs>
+                        <filter id="cs-shadow" x="-20%" y="-20%" width="140%" height="140%">
+                            <feDropShadow dx="0" dy="0" stdDeviation="2" flood-color="#000" flood-opacity="0.85"/>
+                        </filter>
+                    </defs>
+                    <polygon points="12,2 4,22 12,16" fill="#ff3333" filter="url(#cs-shadow)"/>
+                    <polygon points="12,2 20,22 12,16" fill="#ffffff" opacity="0.35" filter="url(#cs-shadow)"/>
+                    <circle cx="12" cy="12" r="1.5" fill="#fff" opacity="0.5"/>
+                </svg>
+                <div id="color-scale">
+                    <div class="color-scale-gradient"></div>
+                    <div class="color-scale-labels">
+                        <span id="cs-5">&gt;60 km/h</span>
+                        <span id="cs-4">30 km/h</span>
+                        <span id="cs-3">20 km/h</span>
+                        <span id="cs-2">10 km/h</span>
+                        <span id="cs-1">0 km/h</span>
+                    </div>
                 </div>
             </div>
             <div id="viewer-geojson-input" style="display:none;">
@@ -41,10 +65,10 @@
     </script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-    <script src="/static/js/app.js?v=12"></script>
-    <script type="module" src="/static/js/viewer.js?v=12"></script>
-    <script src="/static/js/sidebar.js?v=12"></script>
-    <script src="/static/js/simulation.js?v=12"></script>
-    <script src="/static/js/export.js?v=12"></script>
+    <script src="/static/js/app.js?v=28"></script>
+    <script type="module" src="/static/js/viewer.js?v=28"></script>
+    <script src="/static/js/sidebar.js?v=28"></script>
+    <script src="/static/js/simulation.js?v=28"></script>
+    <script src="/static/js/export.js?v=28"></script>
 </body>
 </html>

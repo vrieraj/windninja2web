@@ -8,7 +8,7 @@ let current2DLayerName = 'satellite';
 let scene, camera, renderer, controls, terrainMesh, animId;
 let windArrows = [], geoJson3DObjects = [];
 let demElevations, demNcols, demNrows, demCellW, demCellH, demCenterX, demCenterZ;
-let northArrow = null;
+let rawElevations = null;
 let currentView = '2d';
 
 const tileLayers = {};
@@ -46,7 +46,7 @@ function _updateLayerBar(name) {
 }
 
 const LayerBar = L.Control.extend({
-  options: { position: 'bottomleft' },
+  options: { position: 'topright' },
   onAdd: function () {
     const div = L.DomUtil.create('div', 'leaflet-layer-bar');
     div.innerHTML = ['satellite', 'hybrid', 'standard'].map(n =>
@@ -67,7 +67,7 @@ const LayerBar = L.Control.extend({
 
 /* ---- Search box (top-left) ---- */
 const SearchControl = L.Control.extend({
-  options: { position: 'topleft' },
+  options: { position: 'topright' },
   onAdd: function () {
     const div = L.DomUtil.create('div', 'leaflet-search-control');
     div.innerHTML = `<input type="text" placeholder="Buscar lugar…" id="search-input">
@@ -112,8 +112,8 @@ window.initMap = function () {
 
   currentTileLayer = tileLayers.satellite.addTo(map);
 
-  map.addControl(new LayerBar());
   map.addControl(new SearchControl());
+  map.addControl(new LayerBar());
 
   drawnItems = new L.FeatureGroup();
   map.addLayer(drawnItems);
@@ -168,6 +168,7 @@ window.importGeoJSON = function (file) {
       }).addTo(map);
       appState.geoJSON = data;
       map.fitBounds(layer.getBounds());
+      if (is3D()) _addGeoJSONto3D(data);
     } catch (err) {
       console.error('Error loading GeoJSON:', err);
       alert('Error al cargar GeoJSON: ' + err.message);
@@ -211,6 +212,7 @@ window.changeLayer = async function (layer) {
       });
     } catch (err) {
       console.warn('Texture change failed:', err);
+      setStatus?.('Error al cambiar textura: ' + err.message, 'error');
     }
   };
 
@@ -261,7 +263,6 @@ window.show3DView = async function () {
       renderer?.dispose();
       controls?.dispose();
     } catch (_) {}
-    northArrow = null;
   }
 
   try {
@@ -299,6 +300,7 @@ window.show3DView = async function () {
     const cellSize = elevData.cellSize;
     const isProjected = !!elevData.is_projected;
     const elevations = new Float32Array(elevData.elevations);
+    rawElevations = new Float32Array(elevations);
     const maxElev = Math.max(...elevations);
     const minElev = Math.min(...elevations);
     console.log('DEM data:', { ncols, nrows, cellSize, isProjected, maxElev, minElev });
@@ -323,12 +325,13 @@ window.show3DView = async function () {
     demCenterX = centerX;
     demCenterZ = centerZ;
 
+    const exag = parseFloat(document.getElementById('exaggeration-slider')?.value || 1.5);
     for (let r = 0; r < nrows; r++) {
       for (let c = 0; c < ncols; c++) {
         const i = r * ncols + c;
         const idx = i * 3;
         pos[idx] = c * cellW - centerX;
-        pos[idx + 1] = elevations[i];
+        pos[idx + 1] = elevations[i] * exag;
         pos[idx + 2] = r * cellH - centerZ;
       }
     }
@@ -363,63 +366,71 @@ window.show3DView = async function () {
     controls.maxDistance = maxDim * 5;
     controls.update();
 
-    _addNorthArrow();
+    _setupCompass();
 
     _startAnim();
 
-    if (appState.geoJSON) _addGeoJSONto3D(appState.geoJSON);
-    if (appState.windData && appState.windData.length > 0) {
-      _addWindArrows(appState.windData[appState.timeIndex || 0]);
-    }
+    try { if (appState.geoJSON) _addGeoJSONto3D(appState.geoJSON); } catch (e) { console.warn('GeoJSON 3D failed:', e); }
+    try { if (appState.windData && appState.windData.length > 0) _addWindArrows(appState.windData[appState.timeIndex || 0]); } catch (e) { console.warn('Wind arrows 3D failed:', e); }
   } catch (err) {
     console.error('Error building 3D scene:', err);
     document.getElementById('status-msg') && setStatus?.('Error al construir vista 3D: ' + err.message, 'error');
   }
 };
 
-/* ---- Wind arrows (3D cones) ---- */
+/* ---- Wind arrows (3D cones) with discrete speeds ---- */
+const SPEED_BUCKETS = [
+  { max: 10, color: '#2196F3', size: 0.5 },
+  { max: 20, color: '#4CAF50', size: 0.75 },
+  { max: 30, color: '#FFC107', size: 1.0 },
+  { max: 60, color: '#FF9800', size: 1.3 },
+  { max: Infinity, color: '#F44336', size: 1.6 },
+];
+
 function _addWindArrows(geoJson) {
   if (!scene || !THREE) return;
   _clearWindArrows();
   if (!geoJson || !geoJson.features) return;
 
-  const maxSpeed = geoJson.features.reduce((m, f) => Math.max(m, f.properties.speed || 0), 0) || 1;
   const bbox = appState.bbox;
   const lat = (bbox.north + bbox.south) / 2 * Math.PI / 180;
   const mPerDegLon = 111320 * Math.cos(lat);
 
+  const exag = parseFloat(document.getElementById('exaggeration-slider')?.value || 1.5);
   geoJson.features.forEach(f => {
     const [lon, lat_] = f.geometry.coordinates;
     const speed = f.properties.speed || 0;
     const dir = f.properties.direction || 0;
     if (speed <= 0) return;
 
+    const speed_k = speed * 3.6;
+    const bucket = SPEED_BUCKETS.find(b => speed_k <= b.max) || SPEED_BUCKETS[SPEED_BUCKETS.length - 1];
+    const baseSize = 300;
+    const smallLen = baseSize * bucket.size;
+    const coneR = smallLen * 0.04;
+
     const u = (lon - bbox.west) / (bbox.east - bbox.west);
     const v = (lat_ - bbox.south) / (bbox.north - bbox.south);
     const x = (u - 0.5) * (bbox.east - bbox.west) * mPerDegLon;
-    const z = (v - 0.5) * (bbox.north - bbox.south) * 111320;
-
-    const arrowLen = 200 + (speed / maxSpeed) * 1500;
+    const z = -(v - 0.5) * (bbox.north - bbox.south) * 111320;
 
     const sampleCol = Math.round(((u - 0.5) * (bbox.east - bbox.west) * mPerDegLon + demCenterX) / demCellW);
-    const sampleRow = Math.round(((v - 0.5) * (bbox.north - bbox.south) * 111320 + demCenterZ) / demCellH);
+    const sampleRow = Math.round((z + demCenterZ) / demCellH);
     let elev = 200;
     if (demElevations && sampleCol >= 0 && sampleCol < demNcols && sampleRow >= 0 && sampleRow < demNrows) {
-      elev = demElevations[sampleRow * demNcols + sampleCol] + 50;
+      elev = demElevations[sampleRow * demNcols + sampleCol] * exag + 20;
     }
 
     const rad = (dir + 180) * Math.PI / 180;
+    const arrowColor = new THREE.Color(bucket.color);
+
     const cone = new THREE.Mesh(
-      new THREE.ConeGeometry(arrowLen * 0.04, arrowLen, 6),
-      new THREE.MeshStandardMaterial({
-        color: new THREE.Color().setHSL(0.33 - (speed / maxSpeed) * 0.33, 0.8, 0.5),
-        roughness: 0.6,
-      })
+      new THREE.ConeGeometry(coneR, smallLen, 8),
+      new THREE.MeshBasicMaterial({ color: arrowColor })
     );
-    cone.position.set(x, elev, z);
-    cone.rotation.x = Math.PI / 2;
-    cone.rotation.order = 'YXZ';
-    cone.rotation.y = -rad;
+    cone.position.set(x, elev + smallLen * 0.3, z);
+    const targetDir = new THREE.Vector3(Math.sin(rad), 0, -Math.cos(rad)).normalize();
+    cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), targetDir);
     scene.add(cone);
     windArrows.push(cone);
   });
@@ -438,35 +449,63 @@ function _clearWindArrows() {
 
 window.clearWindArrows = function () { if (is3D()) _clearWindArrows(); };
 
-/* ---- North arrow ---- */
-function _addNorthArrow() {
-  if (!scene || !THREE || !demElevations) return;
-  const maxExt = Math.max(demCenterX, demCenterZ);
-  const offset = maxExt * 0.85;
-  const arrSize = Math.min(demCellW, demCellH) * 20;
-
-  const sc = Math.round((-offset + demCenterX) / demCellW);
-  const sr = Math.round((-offset + demCenterZ) / demCellH);
-  let elev = 0;
-  if (sc >= 0 && sc < demNcols && sr >= 0 && sr < demNrows) {
-    elev = demElevations[sr * demNcols + sc] + arrSize * 0.5;
-  }
-
-  if (northArrow) { scene.remove(northArrow); northArrow = null; }
-  const origin = new THREE.Vector3(-offset, elev, -offset);
-  const dir = new THREE.Vector3(0, 0, 1);
-  dir.normalize();
-  northArrow = new THREE.ArrowHelper(dir, origin, arrSize * 3, 0xff0000, arrSize, arrSize * 0.3);
-  scene.add(northArrow);
+/* ---- Compass arrow (simple rotating triangle) ---- */
+function _setupCompass() {}
+function _updateCompass() {
+  const el = document.getElementById('compass-arrow');
+  if (!el || !camera || !controls) return;
+  const dx = camera.position.x - controls.target.x;
+  const dz = camera.position.z - controls.target.z;
+  if (Math.abs(dx) < 0.001 && Math.abs(dz) < 0.001) return;
+  const deg = Math.atan2(dx, dz) * 180 / Math.PI;
+  el.style.transform = `rotate(${deg}deg)`;
 }
+
+/* ---- Terrain exaggeration ---- */
+window.setTerrainExaggeration = function (factor) {
+  factor = parseFloat(factor) || 1.5;
+  document.getElementById('exaggeration-value').textContent = factor.toFixed(1) + 'x';
+  if (!terrainMesh || !rawElevations) return;
+  const pos = terrainMesh.geometry.attributes.position.array;
+  for (let r = 0; r < demNrows; r++) {
+    for (let c = 0; c < demNcols; c++) {
+      const i = r * demNcols + c;
+      pos[i * 3 + 1] = rawElevations[i] * factor;
+    }
+  }
+  terrainMesh.geometry.attributes.position.needsUpdate = true;
+  terrainMesh.geometry.computeVertexNormals();
+  if (appState.windData && appState.windData.length > 0) {
+    _addWindArrows(appState.windData[appState.timeIndex || 0]);
+  }
+  if (appState.geoJSON) _addGeoJSONto3D(appState.geoJSON);
+};
+
+/* ---- Color scale ---- */
+window.updateColorScale = function () {
+  ['cs-1', 'cs-2', 'cs-3', 'cs-4', 'cs-5'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = '';
+  });
+};
 
 window.onTimeSlider = function (input) {
   const idx = parseInt(input.value);
   appState.timeIndex = idx;
-  document.getElementById("time-label").textContent = `Paso ${idx + 1} / ${appState.timeCount}`;
+  const label = appState.timeLabels && appState.timeLabels[idx]
+    ? appState.timeLabels[idx] : `Paso ${idx + 1} / ${appState.timeCount}`;
+  document.getElementById("time-label").textContent = label;
   if (appState.windData && appState.windData.length > idx) {
     _addWindArrows(appState.windData[idx]);
   }
+};
+
+window.stepTime = function (delta) {
+  const slider = document.getElementById('time-slider');
+  if (!slider) return;
+  const newVal = Math.max(0, Math.min(parseInt(slider.max), parseInt(slider.value) + delta));
+  slider.value = newVal;
+  window.onTimeSlider(slider);
 };
 
 /* ---- GeoJSON in 3D ---- */
@@ -480,32 +519,33 @@ function _addGeoJSONto3D(geojson) {
   const lat = (bbox.north + bbox.south) / 2 * Math.PI / 180;
   const mPerDegLon = 111320 * Math.cos(lat);
 
+  const exag = parseFloat(document.getElementById('exaggeration-slider')?.value || 1.5);
   geojson.features.forEach(f => {
     if (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon') {
       const coords = f.geometry.type === 'Polygon' ? f.geometry.coordinates : f.geometry.coordinates[0];
       const pts = coords[0].map(([lon, lat_]) => {
         const u = (lon - bbox.west) / (bbox.east - bbox.west);
         const v = (lat_ - bbox.south) / (bbox.north - bbox.south);
-        return new THREE.Vector3(
-          (u - 0.5) * (bbox.east - bbox.west) * mPerDegLon,
-          0,
-          (v - 0.5) * (bbox.north - bbox.south) * 111320
-        );
+        const z = -(v - 0.5) * (bbox.north - bbox.south) * 111320;
+        const x = (u - 0.5) * (bbox.east - bbox.west) * mPerDegLon;
+        let elev = 0;
+        if (demElevations) {
+          const sc = Math.round(u * (demNcols - 1));
+          const sr = Math.round((1 - v) * (demNrows - 1));
+          if (sc >= 0 && sc < demNcols && sr >= 0 && sr < demNrows) {
+            elev = demElevations[sr * demNcols + sc] * exag;
+          }
+        }
+        return { x, y: elev, z };
       });
-      const shape = new THREE.ShapeGeometry(pts.map(p => new THREE.Vector2(p.x, p.z)));
-      const mesh = new THREE.Mesh(shape, new THREE.MeshBasicMaterial({
-        color: 0xff6600, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false,
-      }));
-      mesh.position.y = 50;
-      mesh.rotation.x = -Math.PI / 2;
-      scene.add(mesh);
-      geoJson3DObjects.push(mesh);
+      if (pts.length < 3) return;
 
+      const outlinePts = pts.map(p => new THREE.Vector3(p.x, p.y + 100, p.z));
+      outlinePts.push(outlinePts[0]);
       const line = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([...pts, pts[0]]),
+        new THREE.BufferGeometry().setFromPoints(outlinePts),
         new THREE.LineBasicMaterial({ color: 0xff6600 })
       );
-      line.position.y = 51;
       scene.add(line);
       geoJson3DObjects.push(line);
     }
@@ -518,6 +558,7 @@ function _startAnim() {
   function animate() {
     animId = requestAnimationFrame(animate);
     controls?.update();
+    _updateCompass();
     renderer?.render(scene, camera);
   }
   animate();
