@@ -36,10 +36,10 @@ COPY --from=builder /repo/frontend /app/frontend
 COPY --from=builder /repo/data /app/data
 
 ENV WINDNINJA_DATA=/app/data
-ENV PYTHONPATH=/app/backend/lib
+ENV PYTHONPATH=/app/backend:/app/backend/lib
 
 WORKDIR /app
 RUN pip3 install --no-cache-dir -r backend/requirements.txt
 
 EXPOSE 7860
-CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860"]

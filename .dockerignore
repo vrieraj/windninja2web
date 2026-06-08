@@ -1,14 +1,9 @@
 # Exclude secrets
 .env
 
-# Exclude large source dirs not needed for build
+# Exclude large dirs not needed for build
 .git/
-src/
 doc/
 images/
-scripts/
 tools/
-cmake/
 Doxyfile
-README.md
-LICENSE
