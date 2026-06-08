@@ -2,11 +2,11 @@ name: Deploy to Hugging Face Spaces
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
 
 env:
-  HF_SPACE: ${{ vars.HF_USER || 'windninja-web' }}/${{ vars.HF_SPACE || 'windninja-web' }}
+  HF_SPACE: ${{ vars.HF_USER || 'vrieraj' }}/${{ vars.HF_SPACE || 'windninja2web' }}
 
 jobs:
   deploy:
@@ -29,7 +29,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: backend/Dockerfile
+          file: Dockerfile
           push: true
           tags: registry.huggingface.co/${{ env.HF_SPACE }}:latest
           cache-from: type=gha
