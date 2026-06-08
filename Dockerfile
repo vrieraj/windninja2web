@@ -26,7 +26,7 @@ RUN cmake -B /build -S /repo/backend/lib \
 FROM ubuntu:22.04 AS runtime
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    libgdal-dev python3-gdal libboost-date-time1.74.0 libboost-program-options1.74.0 \
+    libgdal-dev libboost-date-time1.74.0 libboost-program-options1.74.0 \
     libcurl3-gnutls libsqlite3-0 libshp2 libnetcdf19 \
     python3 python3-pip \
     && rm -rf /var/lib/apt/lists/*
