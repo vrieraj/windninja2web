@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WindNinja Web</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
-    <link rel="stylesheet" href="/static/css/style.css?v=28">
+    <link rel="stylesheet" href="/static/css/style.css?v=30">
 </head>
 <body>
     <div id="app">
@@ -23,10 +23,10 @@
             <div id="viewer-2d"></div>
             <div id="viewer-3d" style="display:none;position:relative;width:100%;height:100%;">
                 <div id="viewer-3d-controls" style="position:absolute;top:10px;right:10px;z-index:1000;display:flex;gap:4px;">
-                    <button class="leaflet-btn" onclick="window.show2DView()">← Mapa 2D</button>
-                    <button class="leaflet-btn" onclick="window.changeLayer('satellite')">Satélite</button>
-                    <button class="leaflet-btn" onclick="window.changeLayer('standard')">Estándar</button>
-                    <button class="leaflet-btn" onclick="window.changeLayer('hybrid')">Híbrido</button>
+                    <button class="leaflet-btn" data-action="show2DView">← 2D Map</button>
+                    <button class="leaflet-btn" data-action="changeLayer" data-layer="satellite">Satellite</button>
+                    <button class="leaflet-btn" data-action="changeLayer" data-layer="standard">Standard</button>
+                    <button class="leaflet-btn" data-action="changeLayer" data-layer="hybrid">Hybrid</button>
                 </div>
                 <svg id="compass-arrow" viewBox="0 0 24 24" width="36" height="36">
                     <defs>
@@ -65,10 +65,6 @@
     </script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-    <script src="/static/js/app.js?v=28"></script>
-    <script type="module" src="/static/js/viewer.js?v=28"></script>
-    <script src="/static/js/sidebar.js?v=28"></script>
-    <script src="/static/js/simulation.js?v=28"></script>
-    <script src="/static/js/export.js?v=28"></script>
+    <script type="module" src="/static/js/app.js?v=30"></script>
 </body>
 </html>

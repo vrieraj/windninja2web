@@ -382,10 +382,11 @@ Prioridad alta (esencial para MVP):
 
 4. **Timeseries per-file formats devuelven solo el último** (`routes/export.py`). Para formatos que producen N archivos (geotiff, pdf, vtk) con timeseries, ahora se empaquetan en ZIP.
 
-#### Próximos pasos (pendientes)
-- [ ] **README**: actualizar con estado actual, instrucciones de uso local, enlaces a documentación.
-- [ ] **Open-Meteo API**: integrar datos meteorológicos reales (temperatura, nubosidad, viento) como alternativa a entrada manual.
-- [ ] **Refactorización**: limpiar código frontend (módulos ES, separar lógica 3D del visor, estado global), unificar manejo de errores backend.
+#### Pendientes
+- [x] ~~**README**: actualizar con estado actual, instrucciones de uso local, enlaces a documentación.~~
+- [x] ~~**Open-Meteo API**~~: implementado `POST /api/meteo/fetch` con 3 modelos (IFS, GFS, ERA5), toggle Manual/Open-Meteo en frontend, botón "Obtener datos" que rellena tabla horaria.
+- [x] ~~**Refactorización frontend**~~: módulos ES (state.js, app.js), event delegation con data-action, limpieza archivos innecesarios (export.js).
+- [ ] **Añadir modelo AROME, ICON y otros**: la arquitectura backend soporta añadir modelos al dict `MODELS` en `meteo.py`, falta UI para más modelos.
 - [ ] **Deploy HF Spaces**: Docker multietapa funcional, secrets (Cesium token), CI/CD.
 - [ ] Probar frontend en navegador real (simular + exportar + time slider)
 - [ ] Probar DEM fetch desde OpenTopography API

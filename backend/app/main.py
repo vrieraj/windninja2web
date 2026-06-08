@@ -41,8 +41,9 @@ async def config():
     return {}
 
 # Import and register route modules
-from app.routes import simulation, dem, export, map as map_router
+from app.routes import simulation, dem, export, map as map_router, meteo
 app.include_router(simulation.router)
 app.include_router(dem.router)
 app.include_router(export.router)
 app.include_router(map_router.router)
+app.include_router(meteo.router)
