@@ -17,7 +17,7 @@ COPY . /repo
 RUN cmake -B /build -S /repo/backend/lib \
     -DCMAKE_BUILD_TYPE=Release \
     -Dpybind11_DIR=$(python3 -c "import pybind11; print(pybind11.get_cmake_dir())") \
-    && cmake --build /build -j$(nproc) \
+    && cmake --build /build -j2 \
     && cp /build/windninja_core*.so /repo/backend/lib/
 
 # ──────────────────────────────────────────────
