@@ -1,4 +1,6 @@
-function setStatus(msg, type) {
+import { appState, apiPost, apiGet } from './state.js';
+
+export function setStatus(msg, type) {
     const el = document.getElementById("status-msg");
     if (!el) return;
     el.textContent = msg;
@@ -6,23 +8,23 @@ function setStatus(msg, type) {
     el.style.display = "block";
 }
 
-function clearStatus() {
+export function clearStatus() {
     const el = document.getElementById("status-msg");
     if (el) el.style.display = "none";
 }
 
-async function fetchDEM() {
+export async function fetchDEM() {
     const source = document.getElementById("dem-source").value;
     if (source === "upload") {
         document.getElementById("file-upload-input").click();
         return;
     }
-    if (!appState.bbox) return setStatus("Selecciona un área en el mapa primero", "error");
+    if (!appState.bbox) return setStatus("Select an area on the map first", "error");
     const btn = document.getElementById("fetch-dem-btn");
     const origText = btn.textContent;
-    btn.innerHTML = '<span class="spinner"></span> Descargando…';
+    btn.innerHTML = '<span class="spinner"></span> Downloading…';
     btn.disabled = true;
-    setStatus("Descargando DEM…", "info");
+    setStatus("Downloading DEM…", "info");
     try {
         const resp = await apiPost("/dem/fetch", {
             north: appState.bbox.north,
@@ -32,33 +34,49 @@ async function fetchDEM() {
             dem_type: source,
         });
         appState.dem = resp.path;
-        setStatus("DEM listo: " + resp.dem_type.toUpperCase() + " (" + resp.status + ")", "success");
+        setStatus("DEM ready: " + resp.dem_type.toUpperCase() + " (" + resp.status + ")", "success");
         try {
-            await window.show3DView();
+            const viewer = await import('./viewer.js');
+            await viewer.show3DView();
         } catch (err) {
-            setStatus("Error en vista 3D: " + err.message, "error");
+            setStatus("3D view error: " + err.message, "error");
         }
     } catch (e) {
-        setStatus("Error al descargar DEM: " + e.message, "error");
+        setStatus("DEM download error: " + e.message, "error");
     } finally {
         btn.innerHTML = origText;
         btn.disabled = false;
     }
 }
 
-async function uploadDEM(file) {
+export async function uploadDEM(file) {
     const form = new FormData();
     form.append("file", file);
-    const r = await fetch(`${API_BASE}/dem/upload`, { method: "POST", body: form });
+    const r = await fetch(`${window.location.origin}/dem/upload`, { method: "POST", body: form });
     const resp = await r.json();
     appState.dem = resp.path;
-    alert("DEM subido: " + resp.path);
+    alert("DEM uploaded: " + resp.path);
 }
 
-function _basePayload() {
-    if (!appState.bbox) { alert("Selecciona un área en el mapa primero"); return null; }
+function getHourlyData() {
+    const rows = document.querySelectorAll("#hourly-table tbody tr");
+    const speeds = [], directions = [], dates = [], clouds = [], temps = [], hours = [];
+    rows.forEach((r) => {
+        const inputs = r.querySelectorAll("input");
+        speeds.push(parseFloat(inputs[1].value) || 0);
+        directions.push(parseFloat(inputs[2].value) || 0);
+        dates.push(inputs[3].value || "");
+        clouds.push(parseInt(inputs[4].value) || 0);
+        temps.push(parseFloat(inputs[5].value) || 0);
+        hours.push(parseInt(r.dataset.hour) || 0);
+    });
+    return { speeds, directions, dates, clouds, temps, hours, count: speeds.length };
+}
+
+function basePayload() {
+    if (!appState.bbox) { alert("Select an area on the map first"); return null; }
     const demType = document.getElementById("dem-source").value;
-    const p = {
+    return {
         dem_source: demType === "upload" && appState.dem ? appState.dem : "auto",
         dem_type: demType === "upload" ? "srtm" : demType,
         north: appState.bbox.north,
@@ -70,40 +88,29 @@ function _basePayload() {
         input_wind_height: parseFloat(document.getElementById("wind-height").value) || 10,
         output_wind_height: parseFloat(document.getElementById("wind-height").value) || 10,
         mesh_resolution: parseFloat(document.getElementById("mesh-res").value) || 100,
+        time_zone: document.getElementById("timezone").value,
     };
-    if (document.getElementById("diurnal-toggle").checked) {
-        p.diurnal_winds = true;
-    }
-    if (document.getElementById("stability-toggle").checked) {
-        p.non_neutral_stability = true;
-    }
-    p.time_zone = document.getElementById("timezone").value;
-    return p;
 }
 
-function _showProgress() {
+function showProgress() {
     document.getElementById("progress-bar").style.display = "block";
     document.getElementById("progress-fill").style.width = "0%";
     document.getElementById("export-btn").disabled = true;
     document.getElementById("time-slider-container").style.display = "none";
-
-    if (window.currentView !== '3d' && appState.bbox && appState.dem) {
-        window.show3DView();
-    }
 }
 
-async function runSimulation() {
-    const base = _basePayload();
+export async function runSimulation() {
+    const base = basePayload();
     if (!base) return;
     const hd = getHourlyData();
 
-    _showProgress();
+    showProgress();
 
     const simBtn = document.getElementById("sim-btn");
     const origText = simBtn.textContent;
-    simBtn.innerHTML = '<span class="spinner"></span> Simulando…';
+    simBtn.innerHTML = '<span class="spinner"></span> Simulating…';
     simBtn.disabled = true;
-    setStatus("Iniciando simulación…", "info");
+    setStatus("Starting simulation…", "info");
 
     const diurnal = document.getElementById("diurnal-toggle").checked;
     const stability = document.getElementById("stability-toggle").checked;
@@ -116,25 +123,14 @@ async function runSimulation() {
                 input_speed: hd.speeds[0],
                 input_direction: hd.directions[0],
             };
-            if (dialEnabled) {
-                payload.air_temp = hd.temps[0];
-                payload.cloud_cover = hd.clouds[0];
-                const hourVal = parseInt(document.querySelector("#hourly-table tbody tr").dataset.hour) || 12;
-                payload.hour = hourVal;
-                if (hd.dates[0]) {
-                    const d = new Date(hd.dates[0] + "T" + String(hourVal).padStart(2, "0") + ":00");
-                    payload.year = d.getFullYear();
-                    payload.month = d.getMonth() + 1;
-                    payload.day = d.getDate();
-                }
-            }
-            setStatus("Lanzando simulación simple…", "info");
+            if (dialEnabled) addDialParams(payload, hd);
+            setStatus("Launching single simulation…", "info");
             const resp = await apiPost("/simulate/", payload);
             appState.currentTaskId = resp.task_id;
             appState.currentType = "single";
 
             await pollStatus(resp.task_id, async () => {
-                setStatus("Cargando resultados…", "info");
+                setStatus("Loading results…", "info");
                 const grid = await apiGet(`/simulate/grid/${resp.task_id}`);
                 appState.windData = [grid];
                 appState.timeCount = 1;
@@ -142,10 +138,11 @@ async function runSimulation() {
                 const mx = Math.max(...spds);
                 const sorted = [...spds].sort((a, b) => a - b);
                 const p50 = sorted[Math.floor(sorted.length * 0.5)];
-                window.updateColorScale(p50 * 3.6, mx * 3.6);
-                window.addWindArrows(grid, 0);
+                const viewer = await import('./viewer.js');
+                viewer.updateColorScale(p50 * 3.6, mx * 3.6);
+                viewer.addWindArrows(grid, 0);
                 document.getElementById("export-btn").disabled = false;
-                setStatus("Simulación completada", "success");
+                setStatus("Simulation complete", "success");
             });
         } else {
             const payload = {
@@ -153,29 +150,14 @@ async function runSimulation() {
                 speeds: hd.speeds,
                 directions: hd.directions,
             };
-            if (dialEnabled) {
-                payload.air_temp = hd.temps[0];
-                payload.cloud_cover = hd.clouds[0];
-                const rows = document.querySelectorAll("#hourly-table tbody tr");
-                if (rows.length > 0) {
-                    const r = rows[0];
-                    const hourVal = parseInt(r.dataset.hour) || 12;
-                    payload.hour = hourVal;
-                    if (hd.dates[0]) {
-                        const d = new Date(hd.dates[0] + "T" + String(hourVal).padStart(2, "0") + ":00");
-                        payload.year = d.getFullYear();
-                        payload.month = d.getMonth() + 1;
-                        payload.day = d.getDate();
-                    }
-                }
-            }
-            setStatus("Lanzando serie temporal (" + hd.count + " pasos)…", "info");
+            if (dialEnabled) addDialParams(payload, hd);
+            setStatus("Launching time series (" + hd.count + " steps)…", "info");
             const resp = await apiPost("/simulate/timeseries", payload);
             appState.currentTaskId = resp.task_id;
             appState.currentType = "timeseries";
 
             await pollStatus(resp.task_id, async () => {
-                setStatus("Cargando resultados…", "info");
+                setStatus("Loading results…", "info");
                 const grids = [];
                 for (let i = 0; i < hd.count; i++) {
                     const g = await apiGet(`/simulate/grid/${resp.task_id}?index=${i}`);
@@ -186,20 +168,21 @@ async function runSimulation() {
                 appState.timeIndex = 0;
                 appState.timeLabels = hd.dates.map((d, i) => {
                     const h = String(hd.hours[i] || 0).padStart(2, '0');
-                    return d ? `${d} ${h}:00` : `Hora ${h}:00`;
+                    return d ? `${d} ${h}:00` : `Hour ${h}:00`;
                 });
                 const allSpd = grids.flatMap(g => g.features.map(f => f.properties.speed || 0));
                 const mx = Math.max(...allSpd);
                 const sorted = [...allSpd].sort((a, b) => a - b);
                 const p50 = sorted[Math.floor(sorted.length * 0.5)];
-                window.updateColorScale(p50 * 3.6, mx * 3.6);
-                window.addWindArrows(grids[0], 0);
+                const viewer = await import('./viewer.js');
+                viewer.updateColorScale(p50 * 3.6, mx * 3.6);
+                viewer.addWindArrows(grids[0], 0);
                 document.getElementById("time-slider-container").style.display = "block";
                 document.getElementById("time-label").textContent = appState.timeLabels[0];
                 document.getElementById("time-slider").max = hd.count - 1;
                 document.getElementById("time-slider").value = 0;
                 document.getElementById("export-btn").disabled = false;
-                setStatus("Simulación completada (" + hd.count + " pasos)", "success");
+                setStatus("Simulation complete (" + hd.count + " steps)", "success");
             });
         }
     } catch (e) {
@@ -207,6 +190,23 @@ async function runSimulation() {
     } finally {
         simBtn.innerHTML = origText;
         simBtn.disabled = false;
+    }
+}
+
+function addDialParams(payload, hd) {
+    payload.air_temp = hd.temps[0];
+    payload.cloud_cover = hd.clouds[0];
+    const rows = document.querySelectorAll("#hourly-table tbody tr");
+    if (rows.length > 0) {
+        const r = rows[0];
+        const hourVal = parseInt(r.dataset.hour) || 12;
+        payload.hour = hourVal;
+        if (hd.dates[0]) {
+            const d = new Date(hd.dates[0] + "T" + String(hourVal).padStart(2, "0") + ":00");
+            payload.year = d.getFullYear();
+            payload.month = d.getMonth() + 1;
+            payload.day = d.getDate();
+        }
     }
 }
 
@@ -225,7 +225,7 @@ async function pollStatus(taskId, onComplete) {
                     resolve();
                 } else if (status.status === "failed") {
                     clearInterval(poll);
-                    reject(new Error(status.error || "Simulación falló"));
+                    reject(new Error(status.error || "Simulation failed"));
                 }
             } catch (e) {
                 clearInterval(poll);
@@ -235,9 +235,9 @@ async function pollStatus(taskId, onComplete) {
     });
 }
 
-async function exportResult() {
+export async function exportResult() {
     if (!appState.currentTaskId) return;
     const fmt = document.getElementById("export-format").value;
-    const url = `${API_BASE}/export/${appState.currentTaskId}/${fmt}`;
+    const url = `${window.location.origin}/export/${appState.currentTaskId}/${fmt}`;
     window.open(url, "_blank");
 }
