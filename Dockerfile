@@ -39,6 +39,9 @@ ENV WINDNINJA_DATA=/app/data
 ENV PYTHONPATH=/app/backend:/app/backend/lib
 
 WORKDIR /app
+
+# Install numpy BEFORE gdal so _gdal_array C extension compiles correctly
+RUN pip3 install --no-cache-dir "numpy>=1.24.0"
 RUN pip3 install --no-cache-dir -r backend/requirements.txt
 
 EXPOSE 7860
