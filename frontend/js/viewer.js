@@ -286,10 +286,14 @@ export async function show3DView() {
         backLight.position.set(-1, -1, 0);
         scene.add(backLight);
 
-        const elevResp = await fetch(
-            `/dem/data?north=${appState.bbox.north}&south=${appState.bbox.south}&east=${appState.bbox.east}&west=${appState.bbox.west}&dem_type=${document.getElementById('dem-source').value}`
-        );
-        if (!elevResp.ok) throw new Error('Failed to fetch DEM data');
+        const demType = document.getElementById('dem-source').value;
+        const dataUrl = `/dem/data?north=${appState.bbox.north}&south=${appState.bbox.south}&east=${appState.bbox.east}&west=${appState.bbox.west}&dem_type=${demType}`;
+        const elevResp = await fetch(dataUrl);
+        if (!elevResp.ok) {
+            let detail = '';
+            try { const e = await elevResp.json(); detail = e.detail || ''; } catch (_) {}
+            throw new Error(`Failed to fetch DEM data: HTTP ${elevResp.status}${detail ? ' — ' + detail : ''}`);
+        }
         const elevData = await elevResp.json();
 
         const ncols = elevData.ncols, nrows = elevData.nrows;
