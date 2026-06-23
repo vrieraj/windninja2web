@@ -1,4 +1,5 @@
 import { appState, apiPost, apiGet } from './state.js';
+import { getHourlyData } from './sidebar.js';
 
 export function setStatus(msg, type) {
     const el = document.getElementById("status-msg");
@@ -56,21 +57,6 @@ export async function uploadDEM(file) {
     const resp = await r.json();
     appState.dem = resp.path;
     alert("DEM uploaded: " + resp.path);
-}
-
-function getHourlyData() {
-    const rows = document.querySelectorAll("#hourly-table tbody tr");
-    const speeds = [], directions = [], dates = [], clouds = [], temps = [], hours = [];
-    rows.forEach((r) => {
-        const inputs = r.querySelectorAll("input");
-        speeds.push(parseFloat(inputs[1].value) || 0);
-        directions.push(parseFloat(inputs[2].value) || 0);
-        dates.push(inputs[3].value || "");
-        clouds.push(parseInt(inputs[4].value) || 0);
-        temps.push(parseFloat(inputs[5].value) || 0);
-        hours.push(parseInt(r.dataset.hour) || 0);
-    });
-    return { speeds, directions, dates, clouds, temps, hours, count: speeds.length };
 }
 
 function basePayload() {
@@ -135,12 +121,12 @@ export async function runSimulation() {
                 appState.windData = [grid];
                 appState.timeCount = 1;
                 const spds = grid.features.map(f => f.properties.speed || 0);
-                const mx = Math.max(...spds);
+                const mx = spds.length > 0 ? Math.max(...spds) : 0;
                 const sorted = [...spds].sort((a, b) => a - b);
-                const p50 = sorted[Math.floor(sorted.length * 0.5)];
+                const p50 = sorted.length > 0 ? sorted[Math.floor(sorted.length * 0.5)] : 0;
                 const viewer = await import('./viewer.js');
                 viewer.updateColorScale(p50 * 3.6, mx * 3.6);
-                viewer.addWindArrows(grid, 0);
+                viewer.addWindArrows(grid, appState.bbox);
                 document.getElementById("export-btn").disabled = false;
                 setStatus("Simulation complete", "success");
             });
@@ -171,12 +157,12 @@ export async function runSimulation() {
                     return d ? `${d} ${h}:00` : `Hour ${h}:00`;
                 });
                 const allSpd = grids.flatMap(g => g.features.map(f => f.properties.speed || 0));
-                const mx = Math.max(...allSpd);
+                const mx = allSpd.length > 0 ? Math.max(...allSpd) : 0;
                 const sorted = [...allSpd].sort((a, b) => a - b);
-                const p50 = sorted[Math.floor(sorted.length * 0.5)];
+                const p50 = sorted.length > 0 ? sorted[Math.floor(sorted.length * 0.5)] : 0;
                 const viewer = await import('./viewer.js');
                 viewer.updateColorScale(p50 * 3.6, mx * 3.6);
-                viewer.addWindArrows(grids[0], 0);
+                viewer.addWindArrows(grids[0], appState.bbox);
                 document.getElementById("time-slider-container").style.display = "block";
                 document.getElementById("time-label").textContent = appState.timeLabels[0];
                 document.getElementById("time-slider").max = hd.count - 1;

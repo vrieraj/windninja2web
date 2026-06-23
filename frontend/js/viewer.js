@@ -1,4 +1,6 @@
 import { appState, apiGet } from './state.js';
+import { setupGeocoder } from './geocoder.js';
+import { updateCompass } from './compass.js';
 
 let THREE, OrbitControls;
 let map, drawControl, drawnItems, rectLayer;
@@ -72,35 +74,6 @@ const LayerBar = L.Control.extend({
     }
 });
 
-const SearchControl = L.Control.extend({
-    options: { position: 'topright' },
-    onAdd: function () {
-        const div = L.DomUtil.create('div', 'leaflet-search-control');
-        div.innerHTML = `<input type="text" placeholder="Search location…" id="search-input">
-      <button id="search-btn" title="Search">⌕</button>`;
-        L.DomEvent.disableClickPropagation(div);
-        const input = div.querySelector('#search-input');
-        const btn = div.querySelector('#search-btn');
-        function doSearch() {
-            const q = input.value.trim();
-            if (!q) return;
-            fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5`)
-                .then(r => r.json())
-                .then(results => {
-                    if (results.length > 0) {
-                        const r = results[0];
-                        map.setView([r.lat, r.lon], 12);
-                        input.blur();
-                    }
-                })
-                .catch(err => console.error('Search failed:', err));
-        }
-        L.DomEvent.on(btn, 'click', doSearch);
-        L.DomEvent.on(input, 'keydown', e => { if (e.key === 'Enter') doSearch(); });
-        return div;
-    }
-});
-
 export function initMap() {
     const container = document.getElementById('viewer-2d');
     map = L.map(container, { center: [40, -100], zoom: 4, zoomControl: true });
@@ -115,7 +88,7 @@ export function initMap() {
     );
 
     currentTileLayer = tileLayers.satellite.addTo(map);
-    map.addControl(new SearchControl());
+    setupGeocoder(map);
     map.addControl(new LayerBar());
 
     drawnItems = new L.FeatureGroup();
@@ -367,7 +340,7 @@ export async function show3DView() {
         startAnim();
 
         try { if (appState.geoJSON) addGeoJSONto3D(appState.geoJSON); } catch (e) { console.warn('GeoJSON 3D failed:', e); }
-        try { if (appState.windData && appState.windData.length > 0) addWindArrows(appState.windData[appState.timeIndex || 0]); } catch (e) { console.warn('Wind arrows 3D failed:', e); }
+        try { if (appState.windData && appState.windData.length > 0) addWindArrows(appState.windData[appState.timeIndex || 0], appState.bbox); } catch (e) { console.warn('Wind arrows 3D failed:', e); }
     } catch (err) {
         console.error('Error building 3D scene:', err);
         const sim = await import('./simulation.js');
@@ -376,12 +349,16 @@ export async function show3DView() {
 }
 
 /* ---- Wind arrows (3D cones) ---- */
-function addWindArrows(geoJson) {
+function addWindArrows(geoJson, bbox) {
     if (!scene || !THREE) return;
     clearWindArrows();
     if (!geoJson || !geoJson.features) return;
 
-    const bbox = appState.bbox;
+    bbox = bbox || appState.bbox;
+    if (!bbox) {
+        console.warn('addWindArrows: bbox is null, skipping');
+        return;
+    }
     const lat = (bbox.north + bbox.south) / 2 * Math.PI / 180;
     const mPerDegLon = 111320 * Math.cos(lat);
 
@@ -433,18 +410,6 @@ function _clearWindArrows() {
 }
 export function clearWindArrows() { if (is3D()) _clearWindArrows(); }
 
-/* ---- Compass ---- */
-function setupCompass() { }
-function updateCompass() {
-    const el = document.getElementById('compass-arrow');
-    if (!el || !camera || !controls) return;
-    const dx = camera.position.x - controls.target.x;
-    const dz = camera.position.z - controls.target.z;
-    if (Math.abs(dx) < 0.001 && Math.abs(dz) < 0.001) return;
-    const deg = Math.atan2(dx, dz) * 180 / Math.PI;
-    el.style.transform = `rotate(${deg}deg)`;
-}
-
 /* ---- Terrain exaggeration ---- */
 export function setTerrainExaggeration(factor) {
     factor = parseFloat(factor) || 1.5;
@@ -460,17 +425,25 @@ export function setTerrainExaggeration(factor) {
     terrainMesh.geometry.attributes.position.needsUpdate = true;
     terrainMesh.geometry.computeVertexNormals();
     if (appState.windData && appState.windData.length > 0) {
-        addWindArrows(appState.windData[appState.timeIndex || 0]);
+        addWindArrows(appState.windData[appState.timeIndex || 0], appState.bbox);
     }
     if (appState.geoJSON) addGeoJSONto3D(appState.geoJSON);
 }
 
 /* ---- Color scale ---- */
-export function updateColorScale() {
+export function updateColorScale(medianKmh, maxKmh) {
     ['cs-1', 'cs-2', 'cs-3', 'cs-4', 'cs-5'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = '';
     });
+    const cs5 = document.getElementById('cs-5');
+    if (cs5 && maxKmh > 0) cs5.textContent = '>' + Math.round(maxKmh) + ' km/h';
+    const cs4 = document.getElementById('cs-4');
+    if (cs4 && maxKmh > 0) cs4.textContent = Math.round(maxKmh * 0.75) + ' km/h';
+    const cs3 = document.getElementById('cs-3');
+    if (cs3 && medianKmh > 0) cs3.textContent = Math.round(medianKmh) + ' km/h';
+    const cs2 = document.getElementById('cs-2');
+    if (cs2 && medianKmh > 0) cs2.textContent = Math.round(medianKmh * 0.5) + ' km/h';
 }
 
 export function onTimeSlider(input) {
@@ -480,7 +453,7 @@ export function onTimeSlider(input) {
         ? appState.timeLabels[idx] : `Step ${idx + 1} / ${appState.timeCount}`;
     document.getElementById("time-label").textContent = label;
     if (appState.windData && appState.windData.length > idx) {
-        addWindArrows(appState.windData[idx]);
+        addWindArrows(appState.windData[idx], appState.bbox);
     }
 }
 
@@ -542,7 +515,7 @@ function startAnim() {
     function animate() {
         animId = requestAnimationFrame(animate);
         controls?.update();
-        updateCompass();
+        updateCompass(camera, controls.target);
         renderer?.render(scene, camera);
     }
     animate();

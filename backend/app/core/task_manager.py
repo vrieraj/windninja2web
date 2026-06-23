@@ -103,7 +103,8 @@ class TaskManager:
             return t["result"]
 
     def export(self, task_id: str, fmt: str, output_path: str):
-        t = self._tasks.get(task_id)
+        with self._lock:
+            t = self._tasks.get(task_id)
         if t is None or t["status"] != TaskStatus.COMPLETED:
             raise ValueError(f"Task {task_id} not completed")
         result = t["result"]

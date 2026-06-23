@@ -86,7 +86,8 @@ def _fetch_opentopography(north, south, east, west, dem_type):
             f"south={south}&north={north}&west={west}&east={east}&"
             f"outputFormat=GTiff&API_Key={api_key}"
         )
-        logger.info("Fetching DEM from OpenTopography: %s", url[:120])
+        logger.info("Fetching DEM from OpenTopography: demtype=%s bbox=%.4f,%.4f,%.4f,%.4f",
+                     dem_param, south, north, west, east)
         resp = requests.get(url, timeout=180)
         resp.raise_for_status()
         out = dem_cache.store_path(north, south, east, west, dem_type, ".tif")

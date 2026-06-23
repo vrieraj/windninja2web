@@ -122,6 +122,7 @@ function fillPanels() {
     <div style="display:flex;gap:4px;">
       <button class="btn-sm" data-action="addHourRow">+ row</button>
       <button class="btn-sm" data-action="removeHourRow">− row</button>
+      <button class="btn-sm" data-action="fill24Hours" style="background:#585b70;color:#cdd6f4;">24h</button>
     </div>
     <hr style="margin:8px 0;border-color:#313244;">
     <label><input type="checkbox" id="diurnal-toggle" data-action="toggleDiurnal"> Diurnal winds</label>
@@ -234,6 +235,15 @@ function updateArrow(input) {
     span.style.display = "inline-block";
 }
 
+export function fill24Hours() {
+    const tbody = document.querySelector("#hourly-table tbody");
+    tbody.innerHTML = "";
+    for (let h = 0; h < 24; h++) {
+        addHourRow(h, 5, 270, true);
+    }
+    appState.timeCount = 24;
+}
+
 export function getHourlyData() {
     const rows = document.querySelectorAll("#hourly-table tbody tr");
     const speeds = [], directions = [], dates = [], clouds = [], temps = [], hours = [];
@@ -260,7 +270,9 @@ export function toggleMeteoMode() {
     if (mode === "openmeteo") {
         ctrl.style.display = "block";
         document.getElementById("meteo-date").value = new Date().toISOString().slice(0, 10);
-        rows.forEach(r => {
+        fill24Hours();
+        const newRows = document.querySelectorAll("#hourly-table tbody tr");
+        newRows.forEach(r => {
             const inputs = r.querySelectorAll("input");
             if (inputs.length >= 6) {
                 inputs[3].disabled = true;

@@ -1,7 +1,10 @@
 # ──────────────────────────────────────────────
+#  NOTE: This Dockerfile is kept for reference only.
+#  OFFICIAL Dockerfile: backend/Dockerfile
+#  Build with: docker build -f backend/Dockerfile .
+# ──────────────────────────────────────────────
 #  Stage 1 — Build pybind11 module
 # ──────────────────────────────────────────────
-# Build from repo root: docker build -f backend/Dockerfile .
 FROM ubuntu:22.04 AS builder
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \

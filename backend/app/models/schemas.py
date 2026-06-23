@@ -57,5 +57,4 @@ class TimeseriesRequest(BaseModel):
             raise ValueError("speeds and directions must have the same length")
         return self
 
-class ExportRequest(BaseModel):
-    fmt: Literal["geotiff", "gpkg", "kmz", "ascii-zip", "pdf", "vtk"]
+

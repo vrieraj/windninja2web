@@ -60,61 +60,76 @@ async def dem_preview(north: float, south: float, east: float, west: float,
 @router.get("/data")
 async def dem_data(north: float, south: float, east: float, west: float,
                    dem_type: str = "srtm", max_cells: int = 250000):
-    from osgeo import gdal, osr
-    path = dem_cache.get_cached_path(north, south, east, west, dem_type)
-    if path is None:
-        raise HTTPException(404, "DEM not found. Fetch it first via POST /dem/fetch")
-    utm_path = path.with_name(path.stem + "_utm.tif")
-    if utm_path.exists():
-        path = utm_path
-    ds = gdal.Open(str(path))
-    if ds is None:
-        raise HTTPException(500, "Failed to open DEM")
-    gt = ds.GetGeoTransform()
-    ncols_full = ds.RasterXSize
-    nrows_full = ds.RasterYSize
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        from osgeo import gdal, osr
+        path = dem_cache.get_cached_path(north, south, east, west, dem_type)
+        if path is None:
+            raise HTTPException(404, "DEM not found. Fetch it first via POST /dem/fetch")
+        utm_path = path.with_name(path.stem + "_utm.tif")
+        if utm_path.exists():
+            path = utm_path
+        ds = gdal.Open(str(path))
+        if ds is None:
+            logger.error("gdal.Open failed for %s", path)
+            raise HTTPException(500, "Failed to open DEM")
+        gt = ds.GetGeoTransform()
+        ncols_full = ds.RasterXSize
+        nrows_full = ds.RasterYSize
 
-    if ncols_full * nrows_full > max_cells:
-        scale = int((ncols_full * nrows_full / max_cells) ** 0.5) + 1
-        buf_xs = ncols_full // scale
-        buf_ys = nrows_full // scale
-        data = ds.GetRasterBand(1).ReadAsArray(0, 0, ncols_full, nrows_full, buf_xs, buf_ys)
-        ncols = buf_xs
-        nrows = buf_ys
-        cellSize = gt[1] * scale
-    else:
-        data = ds.GetRasterBand(1).ReadAsArray()
-        ncols = ncols_full
-        nrows = nrows_full
-        cellSize = gt[1]
+        band = ds.GetRasterBand(1)
+        if band is None:
+            raise HTTPException(500, "DEM has no raster bands")
 
-    elev = np.asarray(data, dtype=np.float32)
+        if ncols_full * nrows_full > max_cells:
+            scale = int((ncols_full * nrows_full / max_cells) ** 0.5) + 1
+            buf_xs = max(1, ncols_full // scale)
+            buf_ys = max(1, nrows_full // scale)
+            data = band.ReadAsArray(0, 0, ncols_full, nrows_full, buf_xs, buf_ys)
+            ncols = buf_xs
+            nrows = buf_ys
+            cellSize = gt[1] * scale
+        else:
+            data = band.ReadAsArray()
+            ncols = ncols_full
+            nrows = nrows_full
+            cellSize = gt[1]
 
-    band = ds.GetRasterBand(1)
-    nodata = band.GetNoDataValue()
-    if nodata is not None:
-        valid = elev != nodata
-        if valid.any():
-            elev[~valid] = elev[valid].min()
+        if data is None:
+            raise HTTPException(500, "Failed to read DEM raster data")
 
-    from osgeo import osr
-    srs = osr.SpatialReference()
-    proj_wkt = ds.GetProjection()
-    is_projected = False
-    if proj_wkt:
-        try:
-            srs.ImportFromWkt(proj_wkt)
-            is_projected = bool(srs.IsProjected())
-        except Exception:
-            pass
+        elev = np.asarray(data, dtype=np.float32)
 
-    return JSONResponse({
-        "ncols": ncols,
-        "nrows": nrows,
-        "cellSize": cellSize,
-        "xllCorner": gt[0],
-        "yllCorner": gt[3],
-        "elevations": elev.flatten().tolist(),
-        "projection": proj_wkt,
-        "is_projected": is_projected,
-    })
+        nodata = band.GetNoDataValue()
+        if nodata is not None:
+            valid = elev != nodata
+            if valid.any():
+                elev[~valid] = elev[valid].min()
+
+        proj_wkt = ds.GetProjection()
+        is_projected = False
+        if proj_wkt:
+            try:
+                srs = osr.SpatialReference()
+                srs.ImportFromWkt(proj_wkt)
+                is_projected = bool(srs.IsProjected())
+            except Exception:
+                pass
+
+        ds = None
+        return JSONResponse({
+            "ncols": ncols,
+            "nrows": nrows,
+            "cellSize": cellSize,
+            "xllCorner": gt[0],
+            "yllCorner": gt[3],
+            "elevations": elev.flatten().tolist(),
+            "projection": proj_wkt,
+            "is_projected": is_projected,
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("dem_data error: %s", e, exc_info=True)
+        raise HTTPException(500, f"DEM data error: {e}")

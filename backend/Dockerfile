@@ -27,7 +27,7 @@ FROM ubuntu:22.04 AS runtime
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     libgdal30 libboost-date-time1.74.0 libboost-program-options1.74.0 \
-    libcurl3-gnutls libsqlite3-0 libshp2 libnetcdf18 \
+    libcurl3-gnutls libsqlite3-0 libshp2 libnetcdf19 \
     python3 python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
@@ -39,6 +39,9 @@ ENV WINDNINJA_DATA=/app/data
 ENV PYTHONPATH=/app/backend:/app/backend/lib
 
 WORKDIR /app
+
+# Install numpy BEFORE gdal so _gdal_array C extension compiles correctly
+RUN pip3 install --no-cache-dir "numpy>=1.24.0"
 RUN pip3 install --no-cache-dir -r backend/requirements.txt
 
 EXPOSE 7860

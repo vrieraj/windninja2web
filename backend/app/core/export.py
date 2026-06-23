@@ -6,7 +6,6 @@ Replaces direct OutputWriter C++ bindings for full format control.
 import os
 import zipfile
 import numpy as np
-from osgeo import gdal, osr, ogr
 
 from app.core.ninja_bridge import SimulationResult
 
@@ -18,6 +17,7 @@ def _get_units_label(units: str = "mps") -> str:
 def export_geotiff(result: SimulationResult, output_path: str,
                    speed_units: str = "mps"):
     """Write speed + direction as a 2-band GeoTIFF."""
+    from osgeo import gdal, osr
     drv = gdal.GetDriverByName("GTiff")
     ds = drv.Create(output_path, result.ncols, result.nrows, 2, gdal.GDT_Float32)
     gt = (result.xllcorner, result.cell_size, 0,
@@ -40,6 +40,7 @@ def export_geotiff(result: SimulationResult, output_path: str,
 def export_geopackage(results: list[SimulationResult], output_path: str,
                       speed_units: str = "mps"):
     """Write all simulation time steps as layers in a single GeoPackage."""
+    from osgeo import gdal, ogr
     if os.path.exists(output_path):
         os.unlink(output_path)
     drv = gdal.GetDriverByName("GPKG")
@@ -192,7 +193,8 @@ def export_vtk(result: SimulationResult, output_path: str):
 
 # ── Internal helpers ──────────────────────────
 
-def _srs_from_wkt(wkt: str) -> osr.SpatialReference:
+def _srs_from_wkt(wkt: str):
+    from osgeo import osr
     sr = osr.SpatialReference()
     if wkt:
         sr.ImportFromWkt(wkt)
@@ -207,10 +209,11 @@ def _speed_dir_to_uv(speed: np.ndarray, direction: np.ndarray):
     return u, v
 
 
-def _write_vector_grid(layer: ogr.Layer, res: SimulationResult, units: str):
+def _write_vector_grid(layer, res: SimulationResult, units: str):
     """Sample grid at regular intervals and write point features.
     Grid data stored row 0 = south (bottom-to-top), matching yllCorner.
     """
+    from osgeo import ogr
     step = max(1, res.nrows // 40, res.ncols // 40)
     for r in range(0, res.nrows, step):
         for c in range(0, res.ncols, step):

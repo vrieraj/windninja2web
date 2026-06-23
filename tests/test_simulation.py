@@ -16,10 +16,13 @@ import pytest
 import numpy as np
 from pathlib import Path
 
-# Ensure backend is importable
+# Ensure backend is importable (prefer package install, fallback to sys.path)
 REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO / "backend"))
-sys.path.insert(0, str(REPO / "backend" / "lib"))
+try:
+    import app  # noqa: F401
+except ImportError:
+    sys.path.insert(0, str(REPO / "backend"))
+    sys.path.insert(0, str(REPO / "backend" / "lib"))
 
 DATA = REPO / "data"
 DEM = DATA / "missoula_valley.tif"

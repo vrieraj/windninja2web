@@ -1,6 +1,6 @@
 import { appState, apiPost, apiGet } from './state.js';
 import { initMap, toggleDraw, show2DView, changeLayer, setTerrainExaggeration, updateColorScale, onTimeSlider, stepTime, importGeoJSON, clearGeoJSON, addWindArrows, clearWindArrows } from './viewer.js';
-import { buildSidebar, toggleMeteoMode, fetchMeteo, addHourRow, removeHourRow, toggleDiurnal, toggleStability } from './sidebar.js';
+import { buildSidebar, toggleMeteoMode, fetchMeteo, addHourRow, removeHourRow, fill24Hours, toggleDiurnal, toggleStability } from './sidebar.js';
 import { fetchDEM, uploadDEM, runSimulation, exportResult, setStatus } from './simulation.js';
 
 export { appState, apiPost, apiGet };
@@ -63,6 +63,7 @@ const actionMap = {
     fetchMeteo() { fetchMeteo(); },
     addHourRow() { addHourRow(); },
     removeHourRow() { removeHourRow(); },
+    fill24Hours() { fill24Hours(); },
     toggleDiurnal() { toggleDiurnal(); },
     toggleStability() { toggleStability(); },
     runSimulation() { runSimulation(); },

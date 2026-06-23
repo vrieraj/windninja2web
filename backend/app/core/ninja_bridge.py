@@ -198,7 +198,10 @@ class NinjaSession:
 
 
 class TimeSeriesSession:
-    """Multi-run time series simulation using sequential Ninja calls."""
+    """Multi-run time series simulation.
+
+    Uses ninjaArmy (parallel) when possible, falls back to sequential Ninja.
+    """
 
     def __init__(self):
         self._core = _load_core()
@@ -240,8 +243,87 @@ class TimeSeriesSession:
             for i in range(len(speeds))
         ]
 
+    def _run_all_sequential(self) -> list[SimulationResult]:
+        """Run all time steps sequentially (fallback path)."""
+        session = NinjaSession()
+        return [session.simulate(cfg) for cfg in self._configs]
+
+    def run_all_native(self) -> list[SimulationResult]:
+        """Run all time steps in parallel via ninjaArmy.
+
+        Raises RuntimeError if the C++ army path fails; caller should fall back.
+        """
+        if not self._configs:
+            raise RuntimeError("Call configure() before run_all()")
+
+        n = len(self._configs)
+        army = self._core.NinjaArmy()
+        army.makeDomainAverageArmy(n, False)
+        first = self._configs[0]
+
+        for i, cfg in enumerate(self._configs):
+            army.setDEM(i, cfg.dem_path)
+            army.setNumberCPUs(i, cfg.number_cpus)
+            army.setInitializationMethod(i, "domainAverage")
+            army.setInputSpeed(i, cfg.input_speed, "mps")
+            army.setInputDirection(i, cfg.input_direction)
+            army.setInputWindHeight(i, cfg.input_wind_height, "meters")
+            army.setOutputWindHeight(i, cfg.output_wind_height, "meters")
+
+            veg_map = {"grass": "grass", "brush": "brush", "trees": "trees"}
+            army.setUniVegetation(i, veg_map.get(cfg.vegetation, "grass"))
+
+            army.setMeshResolution(i, cfg.mesh_resolution, "meters")
+            army.setNumVertLayers(i, 20)
+            army.setOutputSpeedUnits(i, cfg.output_speed_units)
+            army.setPosition(i)
+
+            if cfg.diurnal_winds:
+                army.setDiurnalWinds(i, True)
+
+            if cfg.non_neutral_stability:
+                army.setStabilityFlag(i, True)
+
+            if cfg.diurnal_winds or cfg.non_neutral_stability:
+                if cfg.air_temp is not None:
+                    army.setUniAirTemp(i, cfg.air_temp, "C")
+                if cfg.cloud_cover is not None:
+                    army.setUniCloudCover(i, cfg.cloud_cover, "percent")
+                if cfg.year is not None:
+                    tz = _map_timezone(cfg.time_zone)
+                    army.setDateTime(
+                        i, cfg.year, cfg.month, cfg.day,
+                        cfg.hour, cfg.minute, cfg.second, tz
+                    )
+
+        army.startRuns(first.number_cpus)
+
+        results = []
+        for i in range(n):
+            speed = np.array(army.getOutputSpeedGrid(i), copy=True)
+            direction = np.array(army.getOutputDirectionGrid(i), copy=True)
+            results.append(SimulationResult(
+                speed=speed,
+                direction=direction,
+                projection=army.getOutputGridProjection(i),
+                cell_size=army.getOutputGridCellSize(i),
+                xllcorner=army.getOutputGridxllCorner(i),
+                yllcorner=army.getOutputGridyllCorner(i),
+                ncols=army.getOutputGridnCols(i),
+                nrows=army.getOutputGridnRows(i),
+                vel_filename="",
+                ang_filename="",
+            ))
+
+        return results
+
     def run_all(self) -> list[SimulationResult]:
         if not self._configs:
             raise RuntimeError("Call configure() before run_all()")
-        session = NinjaSession()
-        return [session.simulate(cfg) for cfg in self._configs]
+        try:
+            return self.run_all_native()
+        except Exception as e:
+            logger.warning(
+                "run_all_native failed, falling back to sequential: %s", e
+            )
+            return self._run_all_sequential()
