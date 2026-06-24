@@ -29,9 +29,12 @@ This fork migrates the simulation engine to a **web environment** accessible fro
   - **IFS** (ECMWF, 25km, forecast)
   - **GFS** (NOAA, forecast)
   - **ERA5** (ECMWF, historical reanalysis)
-- **3D viewer** — Three.js terrain with satellite/standard/hybrid textures, wind arrows color-coded by speed, animated compass, and vertical exaggeration slider.
+- **3D viewer** — Three.js terrain with satellite/standard/hybrid textures, animated compass, vertical exaggeration slider, and auto-retry texture loading.
+- **Wind arrows** — Proper arrow shapes (shaft + head) color-coded by speed, dynamically sized relative to the scene.
+- **Color scale** — Speed legend appears only after a simulation is run.
 - **Time animation** — Interactive slider to navigate multi-hour simulation steps.
-- **Export** — 6 formats: GeoTIFF, GeoPackage, KMZ, ASCII (ZIP), PDF with map, VTK.
+- **Export** — 7 formats: GeoTIFF, GeoPackage, KMZ, ASCII (ZIP), PDF with map, VTK, **Scenario to HTML** (self-contained presentation).
+- **Global timezones** — Full IANA timezone selector (~600 zones) with automatic UTC offset display.
 - **GeoJSON import** — Load custom polygons onto the 3D terrain.
 - **REST API** — FastAPI backend with documented endpoints for simulation, DEM, export, and weather data.
 
