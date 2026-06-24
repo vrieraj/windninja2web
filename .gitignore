@@ -80,3 +80,6 @@ backend/lib/build/
 /out/build/x64-Release
 /out/install/x64-Release
 .aider*
+
+# AGENTS.md (internal, kept local)
+AGENTS.md
