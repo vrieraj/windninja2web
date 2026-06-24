@@ -29,14 +29,28 @@ RUN cmake -B /build -S /repo/backend/lib \
 FROM ubuntu:22.04 AS runtime
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    libgdal-dev libboost-date-time1.74.0 libboost-program-options1.74.0 \
+    libgdal30 libboost-date-time1.74.0 libboost-program-options1.74.0 \
     libcurl3-gnutls libsqlite3-0 libshp2 libnetcdf19 \
-    python3 python3-pip \
+    python3 python3-pip curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /repo/backend /app/backend
 COPY --from=builder /repo/frontend /app/frontend
-COPY --from=builder /repo/data /app/data
+
+# Data directory: tz_world.zip (~15MB) y otros archivos pequeños.
+# No se incluyen en el repo de HF porque superan el límite de 10 MB por archivo
+# y están en .gitignore. Se descargan del upstream WindNinja en build time.
+RUN mkdir -p /app/data && \
+    curl -sL -o /app/data/tz_world.zip \
+      "https://raw.githubusercontent.com/firelab/windninja/master/data/tz_world.zip" && \
+    curl -sL -o /app/data/date_time_zonespec.csv \
+      "https://raw.githubusercontent.com/firelab/windninja/master/data/date_time_zonespec.csv" && \
+    curl -sL -o /app/data/windninja.sqlite \
+      "https://raw.githubusercontent.com/firelab/windninja/master/data/windninja.sqlite" && \
+    curl -sL -o /app/data/config_options.csv \
+      "https://raw.githubusercontent.com/firelab/windninja/master/data/config_options.csv" && \
+    curl -sL -o /app/data/mesonames.csv \
+      "https://raw.githubusercontent.com/firelab/windninja/master/data/mesonames.csv"
 
 ENV WINDNINJA_DATA=/app/data
 ENV PYTHONPATH=/app/backend:/app/backend/lib
