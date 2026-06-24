@@ -48,6 +48,7 @@ FILES=(
   frontend/index.html
   frontend/js/app.js
   frontend/js/compass.js
+  frontend/js/geocoder.js
   frontend/js/sidebar.js
   frontend/js/simulation.js
   frontend/js/state.js
