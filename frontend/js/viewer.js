@@ -438,6 +438,18 @@ function _clearWindArrows() {
 }
 export function clearWindArrows() { if (is3D()) _clearWindArrows(); }
 
+export function getDemData() {
+    if (!demElevations) return null;
+    return {
+        elevations: Array.from(demElevations),
+        ncols: demNcols, nrows: demNrows,
+        cellW: demCellW, cellH: demCellH,
+        centerX: demCenterX, centerZ: demCenterZ,
+    };
+}
+
+export const getSpeedBuckets = () => SPEED_BUCKETS;
+
 /* ---- Terrain exaggeration ---- */
 export function setTerrainExaggeration(factor) {
     factor = parseFloat(factor) || 1.5;
