@@ -56,8 +56,12 @@ __pycache__/
 # Environment (contains secrets)
 .env
 
-# Data caches
+# Data caches (excluido del push a HF por limite 10MB)
 data/
+
+# Docs grandes (>10 MB, excluidos de HF)
+doc/*.pdf
+doc/*.kmz
 
 # Python venv
 backend/.venv/
