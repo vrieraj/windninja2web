@@ -294,7 +294,7 @@ body{background:#11111b;color:#cdd6f4;font-family:'Segoe UI',system-ui,sans-seri
 </div>
 <div id="color-scale">
   <span>0</span>
-  <div><div class="bar"></div><div class="labels"><span>${Math.round(maxSpeed * 2.7)}<span><span>${Math.round(maxSpeed * 3.6)}</span></div></div>
+  <div><div class="bar"></div><div class="labels"><span>${Math.round(maxSpeed * 2.7)}</span><span>${Math.round(maxSpeed * 3.6)}</span></div></div>
   <span>km/h</span>
 </div>
 <script type="module">
@@ -339,7 +339,6 @@ scene.add(bl);
 const geo = new THREE.PlaneGeometry(NCOLS, NROWS, NCOLS-1, NROWS-1);
 geo.rotateX(-Math.PI/2);
 const pos = geo.attributes.position.array;
-const maxElev = -Infinity, minElev = Infinity;
 for (let r = 0; r < NROWS; r++) {
   for (let c = 0; c < NCOLS; c++) {
     const i = r * NCOLS + c;
@@ -347,8 +346,6 @@ for (let r = 0; r < NROWS; r++) {
     pos[idx] = c * CELLW - CX;
     pos[idx+1] = ELEV[i] * 1.5;
     pos[idx+2] = r * CELLH - CZ;
-    if (ELEV[i] > maxElev) maxElev = ELEV[i];
-    if (ELEV[i] < minElev) minElev = ELEV[i];
   }
 }
 geo.computeVertexNormals();
