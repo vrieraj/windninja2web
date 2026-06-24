@@ -41,7 +41,7 @@ function fillPanels() {
     terrain.innerHTML = `
     <label>Timezone</label>
     <select id="timezone">
-      ${allTimezones().map(tz => `<option value="${tz}">${tz}</option>`).join('')}
+      ${allTimezones().map(tz => `<option value="${tz}">${tz} (${tzOffset(tz)})</option>`).join('')}
     </select>
     <hr style="margin:6px 0;border-color:#313244;">
     <label>DEM Source</label>
@@ -154,7 +154,7 @@ function fillPanels() {
       <option value="ascii-zip">ASCII (ZIP)</option>
       <option value="pdf">PDF</option>
       <option value="vtk">VTK</option>
-      <option value="presentation">HTML Presentation</option>
+      <option value="presentation">Scenario to HTML</option>
     </select>
     <button class="btn" id="export-btn" disabled style="background:#585b70;color:#cdd6f4;" data-action="exportResult">Export</button>
   `;
@@ -350,6 +350,16 @@ export async function fetchMeteo() {
         btn.innerHTML = origText;
         btn.disabled = false;
     }
+}
+
+function tzOffset(tz) {
+    try {
+        const now = new Date();
+        const formatter = new Intl.DateTimeFormat('en', { timeZone: tz, timeZoneName: 'shortOffset' });
+        const parts = formatter.formatToParts(now);
+        const off = parts.find(p => p.type === 'timeZoneName');
+        return off ? off.value.replace('GMT', 'UTC') : '';
+    } catch { return ''; }
 }
 
 function allTimezones() {
