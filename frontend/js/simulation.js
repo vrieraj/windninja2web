@@ -227,29 +227,69 @@ export async function exportPresentation() {
         return;
     }
     const viewer = await import('./viewer.js');
-    const canvas = document.querySelector('#viewer-3d canvas');
-    if (!canvas) {
-        setStatus('Switching to 3D view...', 'info');
+    const bbox = appState.bbox;
+    const windData = appState.windData;
+
+    let demData = viewer.getDemData();
+    if (!demData) {
+        setStatus('Fetching DEM data from server...', 'info');
         try {
-            await viewer.show3DView();
-            await new Promise(r => setTimeout(r, 500));
+            const demType = document.getElementById('dem-source')?.value || 'srtm';
+            const resp = await fetch(
+                `/dem/data?north=${bbox.north}&south=${bbox.south}&east=${bbox.east}&west=${bbox.west}&dem_type=${demType}`
+            );
+            if (!resp.ok) {
+                const demBtn = document.getElementById('fetch-dem-btn');
+                if (demBtn) demBtn.click();
+                await new Promise(r => setTimeout(r, 500));
+                const resp2 = await fetch(
+                    `/dem/data?north=${bbox.north}&south=${bbox.south}&east=${bbox.east}&west=${bbox.west}&dem_type=${demType}`
+                );
+                if (!resp2.ok) {
+                    const canvas = document.querySelector('#viewer-3d canvas');
+                    if (!canvas) {
+                        await viewer.show3DView();
+                        await new Promise(r => setTimeout(r, 500));
+                    }
+                    demData = viewer.getDemData();
+                    if (!demData) {
+                        setStatus('No DEM data available. Download a DEM first.', 'error');
+                        return;
+                    }
+                } else {
+                    const json = await resp2.json();
+                    demData = {
+                        elevations: json.elevations,
+                        ncols: json.ncols,
+                        nrows: json.nrows,
+                        cellW: json.cellSize * (json.is_projected ? 1 : 111320 * Math.cos((bbox.north + bbox.south) / 2 * Math.PI / 180)),
+                        cellH: json.cellSize * (json.is_projected ? 1 : 111320),
+                        centerX: (json.ncols - 1) / 2 * json.cellSize * (json.is_projected ? 1 : 111320 * Math.cos((bbox.north + bbox.south) / 2 * Math.PI / 180)),
+                        centerZ: (json.nrows - 1) / 2 * json.cellSize * (json.is_projected ? 1 : 111320),
+                    };
+                }
+            } else {
+                const json = await resp.json();
+                demData = {
+                    elevations: json.elevations,
+                    ncols: json.ncols,
+                    nrows: json.nrows,
+                    cellW: json.cellSize * (json.is_projected ? 1 : 111320 * Math.cos((bbox.north + bbox.south) / 2 * Math.PI / 180)),
+                    cellH: json.cellSize * (json.is_projected ? 1 : 111320),
+                    centerX: (json.ncols - 1) / 2 * json.cellSize * (json.is_projected ? 1 : 111320 * Math.cos((bbox.north + bbox.south) / 2 * Math.PI / 180)),
+                    centerZ: (json.nrows - 1) / 2 * json.cellSize * (json.is_projected ? 1 : 111320),
+                };
+            }
         } catch (e) {
-            setStatus('Could not switch to 3D: ' + e.message, 'error');
+            setStatus('Could not fetch DEM data: ' + e.message, 'error');
             return;
         }
     }
-    const demData = viewer.getDemData();
-    if (!demData) {
-        setStatus('No DEM data loaded. Download a DEM first.', 'error');
-        return;
-    }
     const elevArr = demData.elevations;
     const meta = { ncols: demData.ncols, nrows: demData.nrows, cellW: demData.cellW, cellH: demData.cellH, centerX: demData.centerX, centerZ: demData.centerZ };
-    const bbox = appState.bbox;
-    const windData = appState.windData;
     const timeLabels = appState.timeLabels || [];
-    const speedsBuckets = viewer.getSpeedBuckets();
-    const allSpd = windData.flatMap(g => g.features.map(f => f.properties.speed || 0));
+    const speedsBuckets = viewer.getSpeedBuckets().map(b => ({ ...b, max: b.max === Infinity ? 1e9 : b.max }));
+    const allSpd = windData.flatMap(g => g.features ? g.features.map(f => f.properties.speed || 0) : []);
     const maxSpeed = allSpd.length > 0 ? Math.max(...allSpd) : 0;
     const htmlContent = `<!DOCTYPE html>
 <html lang="en">
@@ -283,6 +323,7 @@ body{background:#11111b;color:#cdd6f4;font-family:'Segoe UI',system-ui,sans-seri
 </head>
 <body>
 <div id="container"></div>
+<div id="error-display" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#1e1e2e;border:1px solid #f44336;border-radius:12px;padding:20px;color:#f44336;z-index:100;max-width:80%;text-align:center;font-size:0.9rem"></div>
 <div id="info">Drag to rotate · Scroll to zoom</div>
 <div id="ui-overlay">
   <div id="time-label">${timeLabels[0] || 'Step 1'}</div>
@@ -298,8 +339,10 @@ body{background:#11111b;color:#cdd6f4;font-family:'Segoe UI',system-ui,sans-seri
   <span>km/h</span>
 </div>
 <script type="module">
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+try {
+  const THREE = await import('three');
+  const oc = await import('three/addons/controls/OrbitControls.js');
+  const OrbitControls = oc.OrbitControls;
 
 const BUCKETS = ${JSON.stringify(speedsBuckets)};
 const ELEV = new Float64Array(${JSON.stringify(elevArr)});
@@ -353,10 +396,11 @@ const mat = new THREE.MeshStandardMaterial({ color: 0x6b8e6b, side: THREE.Double
 const terrain = new THREE.Mesh(geo, mat);
 scene.add(terrain);
 
+const elevMid = (ELEV.reduce((a,b)=>Math.max(a,b), -Infinity) + ELEV.reduce((a,b)=>Math.min(a,b), Infinity)) / 2;
 const maxDim = Math.max(NCOLS * CELLW, NROWS * CELLH);
 const dist = maxDim * 1.2;
-camera.position.set(dist*0.4, dist*0.5, dist*0.8);
-controls.target.set(0, 0, 0);
+camera.position.set(dist*0.4, dist*0.5 + elevMid, dist*0.8);
+controls.target.set(0, elevMid, 0);
 controls.minDistance = Math.min(CELLW, CELLH) * 2;
 controls.maxDistance = maxDim * 5;
 controls.update();
@@ -438,6 +482,11 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(w2, h2);
 });
+} catch (e) {
+  const el = document.getElementById('error-display');
+  if (el) { el.textContent = 'Error: ' + (e.message || e); el.style.display = 'block'; }
+  console.error('WindNinja export error:', e);
+}
 </script>
 </body>
 </html>`;
