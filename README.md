@@ -33,7 +33,7 @@ This fork migrates the simulation engine to a **web environment** accessible fro
 - **Wind arrows** — Proper arrow shapes (shaft + head) color-coded by speed, dynamically sized relative to the scene.
 - **Color scale** — Speed legend appears only after a simulation is run.
 - **Time animation** — Interactive slider to navigate multi-hour simulation steps.
-- **Export** — 7 formats: GeoTIFF, GeoPackage, KMZ, ASCII (ZIP), PDF with map, VTK, **Scenario to HTML** (self-contained presentation).
+- **Export** — 7 formats: GeoTIFF, GeoPackage, KMZ, ASCII (ZIP), PDF with map, VTK, **Scenario to HTML** (interactive 3D scene with terrain, wind arrows, time slider and OrbitControls).
 - **Global timezones** — Full IANA timezone selector (~600 zones) with automatic UTC offset display.
 - **GeoJSON import** — Load custom polygons onto the 3D terrain.
 - **REST API** — FastAPI backend with documented endpoints for simulation, DEM, export, and weather data.
