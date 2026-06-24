@@ -53,8 +53,17 @@ FILES=(
   frontend/js/state.js
   frontend/js/viewer.js
   LICENSE
+  src/ninja_version.h.in
   .huggingface/README.md
 )
+
+# Copy WindNinja C++ source files (tracked by git)
+echo "Copying src/ninja/..."
+mkdir -p "$TMP_DIR/hf-repo/src/ninja"
+cd "$SRC_REPO"
+git ls-files src/ninja/ | while read f; do
+  cp "$SRC_REPO/$f" "$TMP_DIR/hf-repo/$f"
+done
 
 for f in "${FILES[@]}"; do
   mkdir -p "$TMP_DIR/hf-repo/$(dirname "$f")"

@@ -4,6 +4,12 @@ project(windninja_core LANGUAGES CXX C)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED on)
 
+# Generate ninja_version.h from template
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../src/ninja_version.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/ninja_version.h"
+)
+
 # ------- Dependencies -------
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
 find_package(pybind11 REQUIRED)
@@ -40,6 +46,7 @@ endif()
 set(NINJA_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../src/ninja")
 set(NINJA_INCLUDE
     ${NINJA_SRC_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}
     ${Boost_INCLUDE_DIRS}
     ${GDAL_INCLUDE_DIRS}
     ${CURL_INCLUDE_DIRS}
