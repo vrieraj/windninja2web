@@ -291,6 +291,21 @@ export async function exportPresentation() {
     const speedsBuckets = viewer.getSpeedBuckets().map(b => ({ ...b, max: b.max === Infinity ? 1e9 : b.max }));
     const allSpd = windData.flatMap(g => g.features ? g.features.map(f => f.properties.speed || 0) : []);
     const maxSpeed = allSpd.length > 0 ? Math.max(...allSpd) : 0;
+
+    let texDataUrl = '';
+    try {
+        setStatus('Fetching satellite texture...', 'info');
+        const texLayer = document.querySelector('#viewer-3d-controls .leaflet-btn.active')?.dataset.layer
+            || document.querySelector('.layer-btn.active')?.dataset.layer || 'satellite';
+        const texResp = await fetch(
+            `/api/map-image?north=${bbox.north}&south=${bbox.south}&east=${bbox.east}&west=${bbox.west}&layer=${texLayer}&size=1024`
+        );
+        if (texResp.ok) {
+            const blob = await texResp.blob();
+            texDataUrl = await new Promise(r => { const rd = new FileReader(); rd.onload = () => r(rd.result); rd.readAsDataURL(blob); });
+        }
+    } catch (_) { /* texture is optional, fall back to solid color */ }
+
     const htmlContent = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -329,8 +344,11 @@ body{background:#11111b;color:#cdd6f4;font-family:'Segoe UI',system-ui,sans-seri
   <div id="time-label">${timeLabels[0] || 'Step 1'}</div>
   <input type="range" id="time-slider" min="0" max="${windData.length - 1}" value="0" style="width:100%">
   <div class="controls">
-    <button id="prev-btn">◀ Prev</button>
-    <button id="next-btn">Next ▶</button>
+    <button id="prev-btn">◀</button>
+    <button id="play-btn">▶</button>
+    <button id="next-btn">▶</button>
+    <span style="color:#585b70;margin:0 4px;">|</span>
+    <button id="rotate-btn">⟳</button>
   </div>
 </div>
 <div id="color-scale">
@@ -355,6 +373,7 @@ const CZ = ${meta.centerZ};
 const BBOX = ${JSON.stringify(bbox)};
 const WIND = ${JSON.stringify(windData)};
 const LABELS = ${JSON.stringify(timeLabels)};
+const TEX_URL = ${JSON.stringify(texDataUrl)};
 
 const lat = (BBOX.north + BBOX.south) / 2 * Math.PI / 180;
 const mPerDegLon = 111320 * Math.cos(lat);
@@ -392,7 +411,17 @@ for (let r = 0; r < NROWS; r++) {
   }
 }
 geo.computeVertexNormals();
-const mat = new THREE.MeshStandardMaterial({ color: 0x6b8e6b, side: THREE.DoubleSide, roughness: 0.8, metalness: 0.0 });
+let mat;
+if (TEX_URL) {
+  try {
+    const tex = await new THREE.TextureLoader().loadAsync(TEX_URL);
+    mat = new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.7, metalness: 0.1 });
+  } catch (_) {
+    mat = new THREE.MeshStandardMaterial({ color: 0x6b8e6b, side: THREE.DoubleSide, roughness: 0.8, metalness: 0.0 });
+  }
+} else {
+  mat = new THREE.MeshStandardMaterial({ color: 0x6b8e6b, side: THREE.DoubleSide, roughness: 0.8, metalness: 0.0 });
+}
 const terrain = new THREE.Mesh(geo, mat);
 scene.add(terrain);
 
@@ -466,8 +495,29 @@ function setStep(idx) {
 setStep(0);
 
 document.getElementById('time-slider').addEventListener('input', e => setStep(parseInt(e.target.value)));
-document.getElementById('prev-btn').addEventListener('click', () => { setStep(Math.max(0, currentStep-1)); });
-document.getElementById('next-btn').addEventListener('click', () => { setStep(Math.min(WIND.length-1, currentStep+1)); });
+document.getElementById('prev-btn').addEventListener('click', () => { if (playTimer) { clearInterval(playTimer); playTimer = null; document.getElementById('play-btn').textContent = '▶'; } setStep(Math.max(0, currentStep-1)); });
+document.getElementById('next-btn').addEventListener('click', () => { if (playTimer) { clearInterval(playTimer); playTimer = null; document.getElementById('play-btn').textContent = '▶'; } setStep(Math.min(WIND.length-1, currentStep+1)); });
+let playTimer = null;
+document.getElementById('play-btn').addEventListener('click', function () {
+  if (playTimer) {
+    clearInterval(playTimer); playTimer = null;
+    this.textContent = '▶';
+  } else {
+    playTimer = setInterval(() => {
+      const next = currentStep + 1;
+      if (next >= WIND.length) { clearInterval(playTimer); playTimer = null; document.getElementById('play-btn').textContent = '▶'; return; }
+      setStep(next);
+    }, 1500);
+    this.textContent = '⏸';
+  }
+});
+let rotating = false;
+document.getElementById('rotate-btn').addEventListener('click', function () {
+  rotating = !rotating;
+  this.style.background = rotating ? '#89b4fa' : '';
+  controls.autoRotate = rotating;
+  controls.autoRotateSpeed = 1.5;
+});
 
 function anim() {
   requestAnimationFrame(anim);

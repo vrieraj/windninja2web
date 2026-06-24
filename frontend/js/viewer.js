@@ -488,6 +488,7 @@ export function updateColorScale(medianKmh, maxKmh) {
 }
 
 export function onTimeSlider(input) {
+    if (_playTimer) togglePlay();
     const idx = parseInt(input.value);
     appState.timeIndex = idx;
     const label = appState.timeLabels && appState.timeLabels[idx]
@@ -501,9 +502,29 @@ export function onTimeSlider(input) {
 export function stepTime(delta) {
     const slider = document.getElementById('time-slider');
     if (!slider) return;
+    if (_playTimer) togglePlay();
     const newVal = Math.max(0, Math.min(parseInt(slider.max), parseInt(slider.value) + delta));
     slider.value = newVal;
     onTimeSlider(slider);
+}
+
+let _playTimer = null;
+export function togglePlay() {
+    const btn = document.getElementById('play-btn-sidebar');
+    if (_playTimer) {
+        clearInterval(_playTimer); _playTimer = null;
+        if (btn) btn.textContent = '▶';
+    } else {
+        _playTimer = setInterval(() => {
+            const slider = document.getElementById('time-slider');
+            if (!slider) { togglePlay(); return; }
+            const next = parseInt(slider.value) + 1;
+            if (next > parseInt(slider.max)) { togglePlay(); return; }
+            slider.value = next;
+            onTimeSlider(slider);
+        }, 1500);
+        if (btn) btn.textContent = '⏸';
+    }
 }
 
 /* ---- GeoJSON in 3D ---- */
@@ -560,6 +581,28 @@ function startAnim() {
         renderer?.render(scene, camera);
     }
     animate();
+}
+
+export function toggleAutoRotate() {
+    const btn = document.querySelector('[data-action="toggleAutoRotate"]');
+    if (!controls) return;
+    controls.autoRotate = !controls.autoRotate;
+    controls.autoRotateSpeed = 1.5;
+    if (btn) btn.style.background = controls.autoRotate ? '#89b4fa' : '';
+}
+
+export function resetNorth() {
+    if (!controls || !camera || !appState.bbox) return;
+    controls.autoRotate = false;
+    const btn = document.querySelector('[data-action="toggleAutoRotate"]');
+    document.querySelector('[data-action="toggleAutoRotate"]'); if (btn) btn.style.background = '';
+    const cx = appState.bbox.centerX || 0;
+    const cz = appState.bbox.centerZ || 0;
+    const dist = camera.position.distanceTo(controls.target);
+    const elev = camera.position.y;
+    camera.position.set(cx, elev, cz + dist);
+    controls.target.set(cx, 0, cz);
+    controls.update();
 }
 
 export function onResize() {

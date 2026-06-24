@@ -139,8 +139,9 @@ function fillPanels() {
     <div id="time-slider-container" style="display:none;margin-top:6px;">
       <div style="display:flex;align-items:center;gap:4px;justify-content:center;">
         <button class="step-btn" data-action="stepTime" data-delta="-1" title="Previous step">◀</button>
-        <label id="time-label" style="font-size:0.75rem;margin:0;flex:1;text-align:center;">Step 1 / 1</label>
+        <button class="step-btn" id="play-btn-sidebar" data-action="togglePlay" title="Play/pause">▶</button>
         <button class="step-btn" data-action="stepTime" data-delta="1" title="Next step">▶</button>
+        <label id="time-label" style="font-size:0.75rem;margin:0;flex:1;text-align:center;">Step 1 / 1</label>
       </div>
       <input type="range" id="time-slider" min="0" max="0" value="0"
              data-action="onTimeSlider" data-event="input" style="width:100%;">

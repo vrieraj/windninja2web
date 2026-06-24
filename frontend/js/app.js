@@ -1,5 +1,5 @@
 import { appState, apiPost, apiGet } from './state.js';
-import { initMap, toggleDraw, show2DView, changeLayer, setTerrainExaggeration, updateColorScale, onTimeSlider, stepTime, importGeoJSON, clearGeoJSON, addWindArrows, clearWindArrows } from './viewer.js';
+import { initMap, toggleDraw, show2DView, changeLayer, setTerrainExaggeration, updateColorScale, onTimeSlider, stepTime, togglePlay, toggleAutoRotate, resetNorth, importGeoJSON, clearGeoJSON, addWindArrows, clearWindArrows } from './viewer.js';
 import { buildSidebar, toggleMeteoMode, fetchMeteo, addHourRow, removeHourRow, fill24Hours, toggleDiurnal, toggleStability } from './sidebar.js';
 import { fetchDEM, uploadDEM, runSimulation, exportResult, setStatus } from './simulation.js';
 
@@ -77,6 +77,9 @@ const actionMap = {
         const delta = parseInt(el.dataset.delta);
         if (!isNaN(delta)) stepTime(delta);
     },
+    togglePlay() { togglePlay(); },
+    toggleAutoRotate() { toggleAutoRotate(); },
+    resetNorth() { resetNorth(); },
     updateRowHour(el) {
         el.closest('tr').dataset.hour = el.value;
     },
