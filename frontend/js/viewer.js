@@ -246,7 +246,7 @@ export async function show3DView() {
         scene.background = new THREE.Color(0x111827);
 
         camera = new THREE.PerspectiveCamera(55, w / h, 0.1, 1000000);
-        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
         renderer.setSize(w, h);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         container.querySelector('canvas')?.remove();

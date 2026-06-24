@@ -222,16 +222,23 @@ async function pollStatus(taskId, onComplete) {
 }
 
 export async function exportPresentation() {
-    const canvas = document.querySelector('#viewer-3d canvas');
-    if (!canvas) {
-        setStatus('No 3D view available. Please run a simulation first.', 'error');
-        return;
-    }
     if (!appState.bbox || !appState.windData) {
         setStatus('No simulation data available.', 'error');
         return;
     }
-    const imageData = canvas.toDataURL('image/png');
+    const viewer = await import('./viewer.js');
+    const canvas = document.querySelector('#viewer-3d canvas');
+    if (!canvas) {
+        setStatus('Switching to 3D view...', 'info');
+        await viewer.show3DView();
+        await new Promise(r => setTimeout(r, 500));
+    }
+    const renderer = document.querySelector('#viewer-3d canvas');
+    if (!renderer) {
+        setStatus('Could not access 3D view. Switch to 3D first.', 'error');
+        return;
+    }
+    const imageData = renderer.toDataURL('image/png');
     const bbox = appState.bbox;
     const windData = appState.windData;
     const timeLabels = appState.timeLabels || [];
