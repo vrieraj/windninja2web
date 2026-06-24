@@ -174,13 +174,14 @@ export async function changeLayer(layer) {
     if (btns[idx]) btns[idx].style.background = '#555';
 
     try {
-        const texUrl = await loadMapTexture(appState.bbox, layer, 20000);
-        new THREE.TextureLoader().load(texUrl, tex => {
-            if (terrainMesh?.material) {
-                terrainMesh.material.map = tex;
-                terrainMesh.material.needsUpdate = true;
-            }
-        });
+        const sim = await import('./simulation.js');
+        sim.setStatus('Loading texture...', 'info');
+        const texUrl = await loadMapTexture(appState.bbox, layer);
+        const texture = await new THREE.TextureLoader().loadAsync(texUrl);
+        if (terrainMesh?.material) {
+            terrainMesh.material.map = texture;
+            terrainMesh.material.needsUpdate = true;
+        }
     } catch (err) {
         console.warn('Texture change failed:', err);
         const sim = await import('./simulation.js');
@@ -188,20 +189,24 @@ export async function changeLayer(layer) {
     }
 }
 
-async function loadMapTexture(bbox, layer, timeoutMs = 20000) {
+async function loadMapTexture(bbox, layer, timeoutMs = 40000) {
     const { north, south, east, west } = bbox;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    try {
-        const resp = await fetch(
-            `/api/map-image?north=${north}&south=${south}&east=${east}&west=${west}&layer=${layer}&size=1024`,
-            { signal: ctrl.signal }
-        );
-        if (!resp.ok) throw new Error(`Map image fetch failed: ${resp.statusText}`);
-        const blob = await resp.blob();
-        return URL.createObjectURL(blob);
-    } finally {
-        clearTimeout(timer);
+    for (let attempt = 0; attempt < 2; attempt++) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+        try {
+            const resp = await fetch(
+                `/api/map-image?north=${north}&south=${south}&east=${east}&west=${west}&layer=${layer}&size=1024`,
+                { signal: ctrl.signal }
+            );
+            if (!resp.ok) throw new Error(`Map image fetch failed: ${resp.statusText}`);
+            const blob = await resp.blob();
+            return URL.createObjectURL(blob);
+        } catch (err) {
+            clearTimeout(timer);
+            if (attempt === 1) throw err;
+            await new Promise(r => setTimeout(r, 1000));
+        }
     }
 }
 
@@ -218,6 +223,7 @@ export async function show3DView() {
     container.style.display = 'block';
     document.querySelector('.leaflet-layer-bar')?.style.setProperty('display', 'none');
     currentView = '3d';
+    document.getElementById('color-scale').style.display = 'none';
 
     container.style.width = '100%';
     container.style.height = '100%';
@@ -311,8 +317,10 @@ export async function show3DView() {
 
         let mat;
         try {
-            const texUrl = await loadMapTexture(appState.bbox, 'satellite', 20000);
-            const texture = new THREE.TextureLoader().load(texUrl);
+            const sim = await import('./simulation.js');
+            sim.setStatus('Loading satellite texture...', 'info');
+            const texUrl = await loadMapTexture(appState.bbox, 'satellite');
+            const texture = await new THREE.TextureLoader().loadAsync(texUrl);
             mat = new THREE.MeshStandardMaterial({
                 map: texture, side: THREE.DoubleSide,
                 roughness: 0.7, metalness: 0.1,
@@ -371,7 +379,10 @@ function addWindArrows(geoJson, bbox) {
 
         const speed_k = speed * 3.6;
         const bucket = SPEED_BUCKETS.find(b => speed_k <= b.max) || SPEED_BUCKETS[SPEED_BUCKETS.length - 1];
-        const baseSize = 300;
+        const bboxW = (bbox.east - bbox.west) * mPerDegLon;
+        const bboxH = (bbox.north - bbox.south) * 111320;
+        const bboxDiag = Math.sqrt(bboxW * bboxW + bboxH * bboxH);
+        const baseSize = bboxDiag * 0.04;
         const smallLen = baseSize * bucket.size;
         const coneR = smallLen * 0.04;
 
@@ -390,22 +401,39 @@ function addWindArrows(geoJson, bbox) {
         const rad = (dir + 180) * Math.PI / 180;
         const arrowColor = new THREE.Color(bucket.color);
 
-        const cone = new THREE.Mesh(
-            new THREE.ConeGeometry(coneR, smallLen, 8),
+        const group = new THREE.Group();
+        const shaftLen = smallLen * 0.6;
+        const headLen = smallLen * 0.4;
+        const shaftR = coneR * 0.3;
+        const shaft = new THREE.Mesh(
+            new THREE.CylinderGeometry(shaftR, shaftR, shaftLen, 6),
             new THREE.MeshBasicMaterial({ color: arrowColor })
         );
-        cone.position.set(x, elev + smallLen * 0.3, z);
+        shaft.position.y = shaftLen / 2;
+        group.add(shaft);
+        const head = new THREE.Mesh(
+            new THREE.ConeGeometry(coneR * 1.2, headLen, 6),
+            new THREE.MeshBasicMaterial({ color: arrowColor })
+        );
+        head.position.y = shaftLen + headLen / 2;
+        group.add(head);
+        group.position.set(x, elev + smallLen * 0.3, z);
         const targetDir = new THREE.Vector3(Math.sin(rad), 0, -Math.cos(rad)).normalize();
-        cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), targetDir);
-        scene.add(cone);
-        windArrows.push(cone);
+        group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), targetDir);
+        scene.add(group);
+        windArrows.push(group);
     });
 }
 
 export { addWindArrows };
 
 function _clearWindArrows() {
-    windArrows.forEach(o => { scene?.remove(o); o.geometry?.dispose(); o.material?.dispose(); });
+    windArrows.forEach(o => {
+        scene?.remove(o);
+        o.traverse(child => {
+            if (child.isMesh) { child.geometry?.dispose(); child.material?.dispose(); }
+        });
+    });
     windArrows = [];
 }
 export function clearWindArrows() { if (is3D()) _clearWindArrows(); }
@@ -432,6 +460,7 @@ export function setTerrainExaggeration(factor) {
 
 /* ---- Color scale ---- */
 export function updateColorScale(medianKmh, maxKmh) {
+    document.getElementById('color-scale').style.display = '';
     ['cs-1', 'cs-2', 'cs-3', 'cs-4', 'cs-5'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = '';
