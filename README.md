@@ -1,13 +1,3 @@
----
-title: WindNinja Web
-emoji: 🌬️
-colorFrom: blue
-colorTo: red
-sdk: docker
-app_port: 7860
-pinned: false
----
-
 # WindNinja Web
 
 > *Web fork of [WindNinja](https://github.com/firelab/windninja), the diagnostic wind model from the RMRS Missoula Fire Sciences Lab (US Forest Service).*
